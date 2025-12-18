@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wild Shape</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      
+      <!-- Navigation Tabs -->
+      <div class="tabs">
+        <span class="tab active" data-target="view-transform">Transform</span>
+        <span class="tab" data-target="view-library">Library</span>
+      </div>
+
+      <!-- VIEW 1: Transform List -->
+      <div id="view-transform" class="view">
+        <p id="selection-msg" style="color:#888; font-style:italic;">Select a token to shape...</p>
+        <div id="shape-container" class="shape-list">
+          <!-- Shapes injected here via JS -->
+        </div>
+      </div>
+
+      <!-- VIEW 2: Library Manager -->
+      <div id="view-library" class="view hidden">
+        <div class="card">
+          <h3>Add New Shape</h3>
+          <p class="small">Select a token on the map to use its image.</p>
+          
+          <div id="preview-area" style="text-align:center; margin: 10px 0; display:none;">
+            <img id="preview-img" class="shape-img" style="width:80px; height:80px;" />
+          </div>
+
+          <input type="text" id="input-name" placeholder="Animal Name (e.g. Brown Bear)" style="width:95%; padding:8px; margin-bottom:8px;">
+          
+          <select id="input-size" style="width:100%; padding:8px; margin-bottom:8px;">
+            <option value="1">Medium / Small (1x1)</option>
+            <option value="2">Large (2x2)</option>
+            <option value="3">Huge (3x3)</option>
+            <option value="4">Gargantuan (4x4)</option>
+          </select>
+
+          <button id="btn-add-shape" class="primary" disabled>Save to Library</button>
+        </div>
+        
+        <hr style="border-color:#444; margin: 1rem 0;">
+        <h3>Existing Shapes</h3>
+        <div id="library-list" class="shape-list"></div>
+      </div>
+
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

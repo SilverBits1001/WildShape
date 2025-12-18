@@ -1,0 +1,13 @@
+{
+  "name": "Wild Shape",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "background_url": "/",
+  "action": {
+    "title": "Wild Shape",
+    "icon": "/icon.svg",
+    "popover": "/",
+    "height": 500,
+    "width": 350
+  }
+}
