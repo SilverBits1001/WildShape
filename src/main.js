@@ -83,6 +83,51 @@ async function updateItemsByIds(ids, updater) {
   await OBR.scene.items.updateItems(items, updater);
 }
 
+async function restoreItems(ids) {
+  try {
+    await updateItemsByIds(ids, (items) => {
+      for (const item of items) {
+        if (!isImage(item) || !item.image || !item.grid || !item.metadata) continue;
+
+        const original = item.metadata[METADATA_ORIGINAL];
+        if (!original) continue;
+
+        if (original.url) item.image.url = original.url;
+        if (typeof original.imgWidth === "number") item.image.width = original.imgWidth;
+        if (typeof original.imgHeight === "number") item.image.height = original.imgHeight;
+        if (typeof original.gridDpi === "number") item.grid.dpi = original.gridDpi;
+
+        if (original.scale && typeof original.scale.x === "number" && typeof original.scale.y === "number") {
+          item.scale = { x: original.scale.x, y: original.scale.y };
+        }
+
+        if (typeof original.rotation === "number") item.rotation = original.rotation;
+
+        if (item.text && typeof original.name === "string") {
+          item.text.plainText = original.name;
+        }
+
+        const w = Number(original.imgWidth || item.image.width || 0);
+        const h = Number(original.imgHeight || item.image.height || 0);
+
+        if (original.gridOffset && !Array.isArray(original.gridOffset)) {
+          item.grid.offset = original.gridOffset;
+        } else if (w && h) {
+          item.grid.offset = { x: w / 2, y: h / 2 };
+        }
+
+        delete item.metadata[METADATA_ORIGINAL];
+        delete item.metadata[METADATA_STATE];
+      }
+    });
+
+    OBR.notification.show("Reverted to original form");
+  } catch (e) {
+    console.error(e);
+    OBR.notification.show("Error reverting form.", "ERROR");
+  }
+}
+
 function loadImageDimensions(url) {
   if (!url) return Promise.resolve(null);
   if (imageDimCache.has(url)) return Promise.resolve(imageDimCache.get(url));
@@ -928,6 +973,15 @@ async function unsummonSummon(id) {
 async function unsummonAll() {
   if (!activeSummons.length) return;
   await OBR.scene.items.deleteItems(activeSummons.map(s => s.id));
+}
+
+async function handleRevert(context) {
+  const ids = Array.isArray(context?.items)
+    ? context.items.map((i) => i?.id).filter(Boolean)
+    : [];
+
+  if (!ids.length) return;
+  await restoreItems(ids);
 }
 
 // ------------------------------
