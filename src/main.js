@@ -8,46 +8,42 @@ const METADATA_STATE = `${ID}/state`;
 const METADATA_SUMMON = `${ID}/summon`;
 const SUMMON_CREATED_BY = "WildShapeExtension";
 
-// Transform sizing preference (UI dropdown)
+// Transform sizing preference
 const SIZE_PREF_KEY = `${ID}:transformSizeMode`;
 const SIZE_SELECT_ID = "wildshape-size-select";
 
-// Transform options
+// Options
 const ART_ONLY_KEY = `${ID}:artOnly`;
 const ART_ONLY_ID = "wildshape-art-only-toggle";
-
 const LABEL_PREFIX_KEY = `${ID}:labelPrefix`;
 const LABEL_PREFIX_ID = "wildshape-label-prefix-toggle";
 
-// Collapsible options
+// Collapsible Options IDs
 const TRANSFORM_OPTIONS_WRAP_ID = "wildshape-transform-options";
 const TRANSFORM_OPTIONS_CONTENT_ID = "wildshape-transform-options-content";
 const TRANSFORM_OPTIONS_TOGGLE_ID = "wildshape-transform-options-toggle";
 const TRANSFORM_OPTIONS_COLLAPSED_KEY = `${ID}:transformOptionsCollapsed`;
 
-// Active list UI ids (Transform Tab)
+// Active Lists IDs
 const ACTIVE_WRAP_ID = "wildshape-active-wrap";
 const ACTIVE_LIST_ID = "wildshape-active-list";
 const ACTIVE_EMPTY_ID = "wildshape-active-empty";
 const ACTIVE_COUNT_ID = "wildshape-active-count";
 const ACTIVE_REVERT_ALL_ID = "wildshape-active-revert-all";
 
-// Active list UI ids (Summons Tab)
 const SUMMONS_WRAP_ID = "wildshape-summons-wrap";
 const SUMMONS_LIST_ID = "wildshape-summons-list";
 const SUMMONS_EMPTY_ID = "wildshape-summons-empty";
 const SUMMONS_COUNT_ID = "wildshape-summons-count";
 const SUMMONS_UNSUMMON_ALL_ID = "wildshape-summons-unsummon-all";
 
-// Batch preview loading spinner ids
 const BATCH_LOADING_ID = "wildshape-batch-loading";
 const BATCH_LOADING_STYLE_ID = "wildshape-batch-loading-style";
 
-// Tabs
+// State
 const ACTIVE_TAB_KEY = `${ID}:activeTab`;
 const REQUEST_TAB_KEY = `${ID}:requestTab`;
 const REQUEST_SUMMON_POSITION_KEY = `${ID}:summonPosition`;
-const OPEN_TAB_KEY = `${ID}:openTab`;
 
 let availableShapes = [];
 let currentSelectedImage = null;
@@ -56,36 +52,26 @@ let activeTransformed = [];
 let currentSelectionIds = [];
 let pendingSummonPosition = null;
 
-// Cache image dimensions by URL
 const imageDimCache = new Map();
 
-// Batch Add state
-const batch = {
-  active: false,
-  ids: [],
-  index: 0,
-  saved: 0,
-  skipped: 0,
-  complete: null,
-};
-
+const batch = { active: false, ids: [], index: 0, saved: 0, skipped: 0, complete: null };
 let ignoreNextSelectionChange = false;
 
 // ------------------------------
-// ICONS (SVGs)
+// ICONS
 // ------------------------------
-const ICON_TRANSFORM = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`;
-const ICON_TRASH = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>`;
-const ICON_REVERT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 1 1 0 12h-2"/></svg>`;
-const ICON_CHEVRON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
-const ICON_SUMMON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>`;
+const ICON_TRANSFORM = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`;
+const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>`;
+const ICON_REVERT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 1 1 0 12h-2"/></svg>`;
+const ICON_CHEVRON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+const ICON_SUMMON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`;
 
-// Helper to select elements
+// Helpers
 function $(sel) { return document.querySelector(sel); }
+function uuid() { return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15); }
 function isLibraryViewActive() { const v = document.getElementById("view-library"); return v && !v.classList.contains("hidden"); }
 function isTransformViewActive() { const v = document.getElementById("view-transform"); return v && !v.classList.contains("hidden"); }
 function isSummonsViewActive() { const v = document.getElementById("view-summons"); return v && !v.classList.contains("hidden"); }
-function uuid() { return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15); }
 
 // ------------------------------
 // DATA HELPERS
@@ -123,13 +109,6 @@ function safeCloneScale(s) {
   return { x: s.x, y: s.y };
 }
 
-function isPositiveNumber(n) { return typeof n === "number" && Number.isFinite(n) && n > 0; }
-function validateOriginal(o) {
-  if (!o || typeof o !== "object") return false;
-  if (!o.url || !isPositiveNumber(o.imgWidth) || !isPositiveNumber(o.imgHeight) || !isPositiveNumber(o.gridDpi)) return false;
-  return true;
-}
-
 function normalizeLibrary(raw) {
   const list = Array.isArray(raw) ? raw : [];
   const seen = new Set();
@@ -144,8 +123,8 @@ function normalizeLibrary(raw) {
       name: String(s.name || "").trim(),
       size: Number(s.size || 1) || 1,
       url: s.url,
-      imgWidth: isPositiveNumber(Number(s.imgWidth)) ? Number(s.imgWidth) : undefined,
-      imgHeight: isPositiveNumber(Number(s.imgHeight)) ? Number(s.imgHeight) : undefined,
+      imgWidth: Number(s.imgWidth) || undefined,
+      imgHeight: Number(s.imgHeight) || undefined,
     });
   }
   return cleaned;
@@ -163,11 +142,11 @@ function ensureLoadingSpinnerStyles() {
     #${BATCH_LOADING_ID} {
       position: absolute; inset: 0; display: none;
       align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.4); border-radius: 8px; z-index: 10;
+      background: rgba(0,0,0,0.4); border-radius: var(--radius-md); z-index: 5;
     }
     #${BATCH_LOADING_ID} .spinner {
-      width: 24px; height: 24px; border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite;
+      width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.25);
+      border-top-color: #fff; border-radius: 999px; animation: spin 0.8s linear infinite;
     }
   `;
   document.head.appendChild(style);
@@ -191,7 +170,7 @@ function setPreviewLoading(isLoading) {
 }
 
 // ------------------------------
-// TRANSFORM OPTIONS
+// TRANSFORM OPTIONS (UI)
 // ------------------------------
 function getSizeMode() {
   const v = document.getElementById(SIZE_SELECT_ID)?.value || localStorage.getItem(SIZE_PREF_KEY) || "medium";
@@ -248,28 +227,21 @@ function sizeModeToCells(mode) {
   }
 }
 
-// ------------------------------
-// UI: TRANSFORM TAB (Options & Active)
-// ------------------------------
 function ensureTransformSizingUI() {
   const view = document.getElementById("view-transform");
   if (!view || document.getElementById(TRANSFORM_OPTIONS_WRAP_ID)) return;
 
   const wrap = document.createElement("div");
   wrap.id = TRANSFORM_OPTIONS_WRAP_ID;
-  wrap.className = "card";
+  wrap.className = "card"; 
 
-  // Header
   const header = document.createElement("button");
   header.id = TRANSFORM_OPTIONS_TOGGLE_ID;
   header.className = "ws-collapse-btn"; 
   header.style.display = "flex"; header.style.justifyContent = "space-between"; header.style.alignItems = "center"; header.style.width = "100%";
   
   const titleGroup = document.createElement("div");
-  titleGroup.innerHTML = `
-    <div class="panel-title">Transform Options</div>
-    <div class="small" style="margin:0; opacity:0.7;">Size & behavior settings</div>
-  `;
+  titleGroup.innerHTML = `<div class="panel-title">Transform Options</div><div class="small" style="margin:0; opacity:0.7;">Size & behavior settings</div>`;
   const chevron = document.createElement("div");
   chevron.className = "ws-chevron";
   chevron.innerHTML = ICON_CHEVRON;
@@ -278,12 +250,10 @@ function ensureTransformSizingUI() {
   header.appendChild(chevron);
   header.addEventListener("click", () => setTransformOptionsCollapsed(!getTransformOptionsCollapsed()));
 
-  // Content
   const content = document.createElement("div");
   content.id = TRANSFORM_OPTIONS_CONTENT_ID;
   content.style.marginTop = "12px";
 
-  // Size Dropdown
   const row1 = document.createElement("div");
   row1.className = "input-group";
   const label = document.createElement("label");
@@ -292,6 +262,7 @@ function ensureTransformSizingUI() {
   const select = document.createElement("select");
   select.id = SIZE_SELECT_ID;
   
+  // Use inline style to ensure background applies to options in all browsers
   const optStyle = "background-color: var(--bg-input); color: var(--text-main);";
   select.innerHTML = `
     <option value="tiny" style="${optStyle}">Tiny (0.5)</option>
@@ -306,7 +277,6 @@ function ensureTransformSizingUI() {
   row1.appendChild(label);
   row1.appendChild(select);
 
-  // Toggles
   const mkCheck = (id, txt, getter, setter) => {
     const l = document.createElement("label");
     l.style.display = "flex"; l.style.alignItems = "center"; l.style.gap = "8px"; l.style.cursor = "pointer"; l.style.marginBottom = "6px";
@@ -393,7 +363,6 @@ function ensureSummonsUI() {
   wrap.id = SUMMONS_WRAP_ID;
   wrap.className = "card";
 
-  // Header
   const header = document.createElement("div");
   header.className = "panel-header";
   
@@ -500,7 +469,10 @@ function renderLibraryList() {
       <div class="shape-info"><span class="shape-name">${s.name}</span></div>
       <button class="icon-btn danger-icon" title="Delete">${ICON_TRASH}</button>
     `;
-    div.querySelector("button").addEventListener("click", (e) => { e.stopPropagation(); deleteShape(s.id); });
+    div.querySelector("button").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteShape(s.id);
+    });
     c.appendChild(div);
   });
 }
@@ -509,7 +481,6 @@ function renderLibraryList() {
 // DATA SYNC & LISTS
 // ------------------------------
 function buildActiveFromSceneItems(items) {
-  // Wildshape
   activeTransformed = (items || [])
     .filter(i => i.layer === "CHARACTER" && isImage(i) && i.metadata?.[METADATA_ORIGINAL])
     .map(i => {
@@ -524,7 +495,6 @@ function buildActiveFromSceneItems(items) {
     })
     .sort((a,b) => a.baseName.localeCompare(b.baseName));
 
-  // Summons
   activeSummons = (items || [])
     .filter(i => i.metadata?.[METADATA_SUMMON]?.createdBy === SUMMON_CREATED_BY)
     .map(i => ({
@@ -593,7 +563,6 @@ function renderActiveSummonsList() {
   activeSummons.forEach(s => {
     const row = document.createElement("div");
     row.className = "shape-card interactive";
-    
     const summonedBy = s.summonerName ? ` <span style="opacity:0.6">(${s.summonerName})</span>` : "";
 
     row.innerHTML = `
@@ -604,7 +573,6 @@ function renderActiveSummonsList() {
       </div>
       <button class="icon-btn danger-icon" title="Unsummon">${ICON_REVERT}</button>
     `;
-    
     row.addEventListener("click", async () => {
       try { ignoreNextSelectionChange = true; await OBR.player.select([s.id], true); } catch {}
     });
@@ -623,12 +591,11 @@ async function refreshActiveNow() {
 }
 
 // ------------------------------
-// LIBRARY UI HELPERS
+// UI HELPERS
 // ------------------------------
 function normalizeLibraryHelperText() {
   const view = document.getElementById("view-library");
   if (!view || document.getElementById("lib-helper-text")) return;
-  
   const card = view.querySelector(".card");
   const p = document.createElement("p");
   p.id = "lib-helper-text";
@@ -646,9 +613,6 @@ function updateLibraryHelperText(text, color) {
   el.style.color = color === "#ff6666" ? "var(--danger)" : (color || "var(--text-muted)");
 }
 
-// ------------------------------
-// SELECTION & BATCH UI
-// ------------------------------
 function ensureBatchUI() {
   const addBtn = $("#btn-add-shape");
   const nameInput = $("#input-name");
@@ -676,12 +640,14 @@ function ensureBatchUI() {
   ensurePreviewLoadingUI();
 }
 
-// ... Batch logic (same as before, omitted for brevity, ensure functions defined) ...
 function syncSingleSaveButton() {
   const btn = $("#btn-add-shape");
   const input = $("#input-name");
-  if (btn) btn.disabled = !currentSelectedImage || !input?.value?.trim();
+  if (!btn) return;
+  const valid = !!currentSelectedImage && !!input?.value?.trim();
+  btn.disabled = !valid;
 }
+
 function showBatchUI(show) {
   const status = $("#batch-status");
   const controls = $("#batch-controls");
@@ -689,10 +655,12 @@ function showBatchUI(show) {
   if (controls) controls.classList.toggle("hidden", !show);
   if (show) updateLibraryHelperText("Batch Mode: Name tokens.", "var(--primary)");
 }
+
 function showBatchCompleteUI(show) {
   const done = $("#batch-complete");
   if (done) done.style.display = show ? "block" : "none";
 }
+
 function setLibraryFormEnabled(enabled) {
   const addBtn = $("#btn-add-shape");
   const nameInput = $("#input-name");
@@ -704,7 +672,9 @@ function setLibraryFormEnabled(enabled) {
   if (previewArea && !enabled) previewArea.style.display = "none";
 }
 
-// Batch Functions (Full)
+// ------------------------------
+// BATCH LOGIC
+// ------------------------------
 function startBatch(selectionIds) {
   batch.active = true; batch.ids = [...selectionIds]; batch.index = 0; batch.saved = 0; batch.skipped = 0; batch.complete = null;
   showBatchCompleteUI(false); showBatchUI(true); void loadBatchCurrentItem();
@@ -839,13 +809,10 @@ async function updateSelectionUI(selection) {
 // ------------------------------
 async function handleSummonClick(shape) {
   if (pendingSummonPosition) {
-    // If we had a context menu click stored, use it (feature B)
     await summonCreature(shape, { type: "at", position: pendingSummonPosition });
     pendingSummonPosition = null;
     return;
   }
-
-  // Otherwise default to adjacent summon (feature A)
   if (!currentSelectionIds.length) {
     OBR.notification.show("Select a token to summon adjacent.", "WARNING");
     return;
@@ -853,7 +820,6 @@ async function handleSummonClick(shape) {
   const items = await OBR.scene.items.getItems([currentSelectionIds[0]]);
   const summoner = items[0];
   if (!summoner) return;
-  
   await summonCreature(shape, { type: "adjacent", summoner });
 }
 
@@ -890,26 +856,17 @@ async function summonCreature(shape, options) {
   let dpi = 150;
   try { dpi = await OBR.scene.grid.getDpi(); } catch{}
 
-  // Logic: Use shape.size (cells) or default 1
   const cells = Number(shape.size) || 1;
-  const sizePx = cells * dpi; 
-  // We use intrinsic image dims for quality, but set grid.dpi to force it to occupy 'cells' size.
-  // Actually simpler: Set scale so it fits 'cells' size in grid units.
-  // But standard practice in OBR2 is to set grid.dpi to intrinsic_width / cells.
+  const sizePx = cells * dpi;
 
   if (options.type === "at" && options.position) {
     position = options.position;
   } else if (options.type === "adjacent" && options.summoner) {
     const sPos = options.summoner.position;
     const cell = cellSizeFromItem(options.summoner);
-    // Simple adjacent logic: Right, Left, Down, Up
     const offsets = [ {x:cell,y:0}, {x:-cell,y:0}, {x:0,y:cell}, {x:0,y:-cell} ];
     const existing = await OBR.scene.items.getItems(i => i.layer === "CHARACTER");
-    
-    // Approximate rendered size for collision check
-    // We don't have the final item yet, so we estimate sizePx
     const candidateSize = { w: sizePx, h: sizePx }; 
-    
     let found = false;
     for (const off of offsets) {
       const candidate = { x: sPos.x + off.x, y: sPos.y + off.y };
@@ -923,10 +880,8 @@ async function summonCreature(shape, options) {
     }
   }
 
-  // Name Resolution
   const baseName = shape.name || "Summon";
   const allItems = await OBR.scene.items.getItems();
-  // Simple regex for "Name N"
   const regex = new RegExp(`^${baseName}( \\d+)?$`, "i");
   let maxNum = 0;
   let hasBase = false;
@@ -979,23 +934,8 @@ async function unsummonAll() {
 // CONTEXT MENU HANDLER
 // ------------------------------
 async function handleContextMenuSummon(context) {
-  // If clicked item, use its position as fallback or just open tab
-  // If we could get map coords we'd set pendingSummonPosition.
-  // Current OBR API ContextMenuContext = { items: Item[] } (selection or target).
-  // We can't get mouse coords easily. 
-  // We'll set a flag so the user knows "Next click in summons tab = summon here" if possible?
-  // Actually, we'll just open the tab. The user requested "spawns at clicked location". 
-  // Without mouse coords, we assume they clicked a location. If they clicked a map (background), items=[map].
-  // If they clicked nothing? Context menu might not show or shows empty items.
-  
-  // Strategy: If items.length > 0, use item[0].position. If Map, use center?
-  // Limitation: OBR 2 Context Menu API doesn't pass click coords.
-  // We will just open the tab and let them use the "Summon Adjacent" flow (which uses selection),
-  // OR we default to spawning at the center of the viewport if we can find it.
-  
   await OBR.action.open();
-  const tab = document.querySelector('.tab[data-target="view-summons"]');
-  if (tab) tab.click();
+  activateTab("view-summons");
   OBR.notification.show("Select creature to summon.");
 }
 
@@ -1005,35 +945,38 @@ async function handleContextMenuSummon(context) {
 function setupTabs() {
   const tabs = document.querySelectorAll(".tab");
   tabs.forEach(t => {
-    t.addEventListener("click", async () => {
-      document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
-      document.querySelectorAll(".view").forEach(x => x.classList.add("hidden"));
-      t.classList.add("active");
-      const v = document.getElementById(t.dataset.target);
-      if (v) v.classList.remove("hidden");
-
-      localStorage.setItem(ACTIVE_TAB_KEY, t.dataset.target);
-
-      if (t.dataset.target === "view-transform") {
-        ensureActiveTransformedUI(); ensureTransformSizingUI(); renderActiveTransformedList(); await refreshActiveNow();
-      }
-      if (t.dataset.target === "view-summons") {
-        ensureSummonsUI(); renderAvailableSummonsList(); renderActiveSummonsList(); await refreshActiveNow();
-      }
-      if (t.dataset.target === "view-library") {
-        ensureBatchUI(); normalizeLibraryHelperText(); const s = await OBR.player.getSelection(); updateSelectionUI(s);
-      }
-    });
+    t.addEventListener("click", () => activateTab(t.dataset.target));
   });
 }
 
-function activateTab(id) {
-  const t = document.querySelector(`.tab[data-target="${id}"]`);
-  if (t) t.click();
+function activateTab(targetId) {
+  const tabs = document.querySelectorAll(".tab");
+  const views = document.querySelectorAll(".view");
+  
+  views.forEach(v => v.classList.add("hidden"));
+  tabs.forEach(t => t.classList.remove("active"));
+
+  const tab = document.querySelector(`.tab[data-target="${targetId}"]`);
+  const view = document.getElementById(targetId);
+
+  if (tab) tab.classList.add("active");
+  if (view) view.classList.remove("hidden");
+
+  localStorage.setItem(ACTIVE_TAB_KEY, targetId);
+
+  if (targetId === "view-transform") {
+    ensureActiveTransformedUI(); ensureTransformSizingUI(); renderActiveTransformedList(); void refreshActiveNow();
+  }
+  if (targetId === "view-summons") {
+    ensureSummonsUI(); renderAvailableSummonsList(); renderActiveSummonsList(); void refreshActiveNow();
+  }
+  if (targetId === "view-library") {
+    ensureBatchUI(); normalizeLibraryHelperText(); void OBR.player.getSelection().then(updateSelectionUI);
+  }
 }
 
 // ------------------------------
-// MAIN INIT CONTINUED
+// MAIN INIT
 // ------------------------------
 OBR.onReady(async () => {
   console.log("[WildShape] Ready");
@@ -1044,7 +987,6 @@ OBR.onReady(async () => {
     onClick: async () => await OBR.action.open(),
   });
 
-  // Context Menu: Summon Familiar
   OBR.contextMenu.create({
     id: `${ID}/summon-familiar`,
     icons: [{ icon: "/icon.svg", label: "Summon Familiar", filter: { every: [{ key: "layer", value: "CHARACTER" }] } }],
@@ -1073,10 +1015,7 @@ OBR.onReady(async () => {
       libTab.innerText = "Library";
       if (role && role.toUpperCase() !== "GM") {
         libTab.style.display = "none";
-        // If saved tab was library, force transform
-        if (localStorage.getItem(ACTIVE_TAB_KEY) === "view-library") {
-          activateTab("view-transform");
-        }
+        if (localStorage.getItem(ACTIVE_TAB_KEY) === "view-library") activateTab("view-transform");
       }
     }
   } catch (e) { console.error(e); }
