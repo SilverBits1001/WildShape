@@ -50,6 +50,13 @@ body {
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#app {
+  min-height: 100%;
 }
 
 h1, h2, h3, h4 { margin: 0 0 var(--space-sm) 0; font-weight: 600; color: #fff; }
