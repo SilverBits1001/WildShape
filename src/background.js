@@ -73,7 +73,7 @@ async function restoreItems(ids) {
 }
 
 async function setupContextMenus() {
-  const iconUrl = await OBR.assets.getUrl("/icon.svg");
+ const iconUrl = new URL("/icon.svg", import.meta.url).href;
 
   // 1) Wild Shape (open extension to Transform tab)
   OBR.contextMenu.create({
