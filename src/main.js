@@ -96,6 +96,9 @@ async function applyShape(shape) {
   const sizeCells = sizeValueToCells(shape?.size ?? getSizeMode());
   const namePrefix = getLabelPrefix() ? "🐾 " : "";
 
+  let sceneDpi = 0;
+  try { sceneDpi = await OBR.scene.grid.getDpi(); } catch (e) { console.error(e); }
+
   await OBR.scene.items.updateItems(targets, (updating) => {
     for (const item of updating) {
       if (!isImage(item) || !item.image || !item.grid) continue;
@@ -124,10 +127,11 @@ async function applyShape(shape) {
       item.image.height = dims.height;
 
       if (!artOnly) {
-        const dpi = Number(dims.width) / (sizeCells || 1);
-        item.grid.dpi = Number.isFinite(dpi) && dpi > 0 ? dpi : item.grid.dpi;
+        const targetDpi = Number(sceneDpi) > 0 ? sceneDpi : Number(item.grid?.dpi || 150);
+        const { gridDpi, scale } = calculateScaleForCells(dims, sizeCells, targetDpi);
+        item.grid.dpi = gridDpi;
         item.grid.offset = { x: dims.width / 2, y: dims.height / 2 };
-        item.scale = { x: 1, y: 1 };
+        item.scale = scale;
         item.rotation = 0;
       }
 
@@ -266,6 +270,24 @@ function sizeValueToCells(value) {
   const num = Number(value);
   if (!Number.isNaN(num) && num > 0) return num;
   return sizeModeToCells(String(value));
+}
+
+function calculateScaleForCells(dims, cells, gridDpi) {
+  const width = Number(dims?.width || 0);
+  const height = Number(dims?.height || 0);
+  const dpi = Number(gridDpi);
+  const safeDpi = Number.isFinite(dpi) && dpi > 0 ? dpi : 150;
+  const targetPx = (Number(cells) || 1) * safeDpi;
+  const scaleX = width ? targetPx / width : 1;
+  const scaleY = height ? targetPx / height : 1;
+  return {
+    targetPx,
+    gridDpi: safeDpi,
+    scale: {
+      x: Number.isFinite(scaleX) && scaleX > 0 ? scaleX : 1,
+      y: Number.isFinite(scaleY) && scaleY > 0 ? scaleY : 1,
+    },
+  };
 }
 
 function formatSizeLabel(size) {
@@ -1093,8 +1115,10 @@ async function summonCreature(shape, options) {
   let dpi = 150;
   try { dpi = await OBR.scene.grid.getDpi(); } catch{}
 
+  const { gridDpi, targetPx, scale } = calculateScaleForCells(dims, Number(shape.size) || 1, dpi);
+
   const cells = Number(shape.size) || 1;
-  const sizePx = cells * dpi;
+  const sizePx = targetPx;
 
   if (options.type === "at" && options.position) {
     position = options.position;
@@ -1135,15 +1159,24 @@ async function summonCreature(shape, options) {
   let finalName = baseName;
   if (hasBase || maxNum > 0) finalName = `${baseName} ${maxNum + 1}`;
 
+  let createdUserId = "";
+  try { createdUserId = await OBR.player.getId(); } catch (e) { console.error(e); }
+  if (!createdUserId) createdUserId = "wildshape";
+
   const newItem = {
     id: uuid(),
     type: "IMAGE",
+    name: finalName,
+    visible: true,
+    locked: false,
+    createdUserId,
+    zIndex: 0,
     layer: "CHARACTER",
     position: position,
     rotation: 0,
-    scale: { x: 1, y: 1 },
+    scale: scale,
     image: { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" },
-    grid: { dpi: dims.width / cells, offset: { x: dims.width/2, y: dims.height/2 } },
+    grid: { dpi: gridDpi, offset: { x: dims.width/2, y: dims.height/2 } },
     text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity:1, strokeOpacity:1, textAlign: "CENTER" }, richText: [] },
     metadata: {
       [METADATA_SUMMON]: {
