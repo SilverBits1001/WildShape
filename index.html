@@ -14,12 +14,9 @@
         <div class="tab" data-target="view-library">Library</div>
       </div>
 
-      <!-- TRANSFORM VIEW -->
+      <!-- VIEW 1: TRANSFORM -->
       <div id="view-transform" class="view">
-        <!-- JS dynamically injects:
-             1. Transform Options (Size dropdown, toggles)
-             2. Active Wild Shapes list
-        -->
+        <!-- JS injects: Transform Options & Active Wild Shapes -->
         
         <div class="panel-header" style="margin-top:4px;">
           <span class="panel-title">Available Forms</span>
@@ -29,11 +26,9 @@
         </div>
       </div>
 
-      <!-- SUMMONS VIEW -->
+      <!-- VIEW 2: SUMMONS -->
       <div id="view-summons" class="view hidden">
-        <!-- JS dynamically injects:
-             1. Active Summons list (with Unsummon All)
-        -->
+        <!-- JS injects: Active Summons Card -->
         
         <div class="panel-header" style="margin-top:4px;">
           <span class="panel-title">Available Creatures</span>
@@ -43,7 +38,7 @@
         </div>
       </div>
 
-      <!-- LIBRARY VIEW -->
+      <!-- VIEW 3: LIBRARY -->
       <div id="view-library" class="view hidden">
         
         <div class="card">
@@ -53,13 +48,11 @@
           
           <!-- Helper text inserted here by JS -->
 
-          <!-- Preview Area -->
           <div id="preview-area" style="display:none;">
             <img id="preview-img" src="" alt="Token Preview">
             <div class="small" style="margin-top:4px;">Selected Token</div>
           </div>
 
-          <!-- Form -->
           <div class="input-group">
             <label class="input-label">Shape Name</label>
             <input type="text" id="input-name" placeholder="e.g. Giant Spider">
@@ -70,16 +63,15 @@
             <input type="number" id="input-size" placeholder="1" min="0.1" step="0.1">
           </div>
 
-          <!-- Main Action Button -->
           <button id="btn-add-shape" class="primary" disabled>Select a Token</button>
 
-          <!-- Batch Controls (Hidden by default) -->
+          <!-- Batch Controls -->
           <div id="batch-controls" class="hidden">
             <button id="btn-skip">Skip</button>
             <button id="btn-cancel-batch" class="danger">Cancel Batch</button>
           </div>
 
-          <!-- Batch Complete Overlay (Hidden by default) -->
+          <!-- Batch Overlay -->
           <div id="batch-complete" class="hidden">
              <div id="batch-complete-title">Batch complete</div>
              <div id="batch-complete-msg"></div>
@@ -88,10 +80,8 @@
                <button id="btn-batch-close">Close Extension</button>
              </div>
           </div>
-
         </div>
 
-        <!-- Library List -->
         <div class="panel-header" style="margin-top:16px;">
           <span class="panel-title">Saved Shapes</span>
         </div>
