@@ -1,13 +1,16 @@
+
 {
   "name": "Wild Shape",
   "version": "1.0.0",
   "manifest_version": 1,
-  "background_url": "/",
+  "description": "Wild Shape tools for swapping token forms.",
+  "icon": "/icon.svg",
   "action": {
     "title": "Wild Shape",
     "icon": "/icon.svg",
     "popover": "/",
     "height": 500,
     "width": 350
-  }
+  },
+  "background_url": "/background.html"
 }
