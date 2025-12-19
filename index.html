@@ -59,8 +59,23 @@
           </div>
 
           <div class="input-group">
-            <label class="input-label">Size Multiplier (Reference)</label>
-            <input type="number" id="input-size" placeholder="1" min="0.1" step="0.1">
+            <label class="input-label">Size</label>
+            <select id="input-size">
+              <option value="tiny">Tiny (0.5x)</option>
+              <option value="small">Small (0.75x)</option>
+              <option value="medium" selected>Medium (1x1)</option>
+              <option value="large">Large (2x2)</option>
+              <option value="huge">Huge (3x3)</option>
+              <option value="gargantuan">Gargantuan (4x4)</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label">Summon Visibility</label>
+            <label class="checkbox-row">
+              <input type="checkbox" id="input-summonable" checked>
+              <span>Show in Summons list</span>
+            </label>
           </div>
 
           <button id="btn-add-shape" class="primary" disabled>Select a Token</button>

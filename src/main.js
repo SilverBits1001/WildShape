@@ -11,6 +11,15 @@ const SUMMON_CREATED_BY = "WildShapeExtension";
 // Transform sizing preference
 const SIZE_PREF_KEY = `${ID}:transformSizeMode`;
 const SIZE_SELECT_ID = "wildshape-size-select";
+const LIB_SIZE_OPTIONS = [
+  { value: "tiny", cells: 0.5, label: "Tiny (0.5x)" },
+  { value: "small", cells: 0.75, label: "Small (0.75x)" },
+  { value: "medium", cells: 1, label: "Medium (1x1)" },
+  { value: "large", cells: 2, label: "Large (2x2)" },
+  { value: "huge", cells: 3, label: "Huge (3x3)" },
+  { value: "gargantuan", cells: 4, label: "Gargantuan (4x4)" },
+];
+const SUMMONABLE_TOGGLE_ID = "input-summonable";
 
 // Options
 const ART_ONLY_KEY = `${ID}:artOnly`;
@@ -154,6 +163,30 @@ function safeCloneScale(s) {
   return { x: s.x, y: s.y };
 }
 
+function sizeValueToCells(value) {
+  const num = Number(value);
+  if (!Number.isNaN(num) && num > 0) return num;
+  return sizeModeToCells(String(value));
+}
+
+function formatSizeLabel(size) {
+  const cells = Number(size) || 1;
+  const match = LIB_SIZE_OPTIONS.find(o => Math.abs(o.cells - cells) < 0.0001);
+  return match ? match.label : `${cells}x`;
+}
+
+function getLibrarySizeCells() {
+  const select = document.getElementById("input-size");
+  return sizeValueToCells(select?.value || "medium");
+}
+
+function setLibrarySizeInput(cells) {
+  const select = document.getElementById("input-size");
+  if (!select) return;
+  const match = LIB_SIZE_OPTIONS.find(o => Math.abs(o.cells - Number(cells || 0)) < 0.0001);
+  select.value = match?.value || "medium";
+}
+
 function normalizeLibrary(raw) {
   const list = Array.isArray(raw) ? raw : [];
   const seen = new Set();
@@ -166,10 +199,11 @@ function normalizeLibrary(raw) {
       v: 1,
       id: s.id,
       name: String(s.name || "").trim(),
-      size: Number(s.size || 1) || 1,
+      size: sizeValueToCells(s.size || 1),
       url: s.url,
       imgWidth: Number(s.imgWidth) || undefined,
       imgHeight: Number(s.imgHeight) || undefined,
+      summonable: s.summonable !== false,
     });
   }
   return cleaned;
@@ -465,7 +499,7 @@ function renderShapeList() {
       <img src="${s.url}" class="shape-img">
       <div class="shape-info">
         <span class="shape-name">${s.name}</span>
-        <span class="shape-size">Size: ${s.size || 1}x</span>
+        <span class="shape-size">${formatSizeLabel(s.size)}</span>
       </div>
       <div class="action-indicator" title="Transform">${ICON_TRANSFORM}</div>
     `;
@@ -478,18 +512,19 @@ function renderAvailableSummonsList() {
   const container = $("#summons-available-list");
   if (!container) return;
   container.innerHTML = "";
-  if (!availableShapes.length) {
+  const summonableShapes = availableShapes.filter(s => s.summonable !== false);
+  if (!summonableShapes.length) {
     container.innerHTML = `<p class="helper-text" style="text-align:center; font-style:italic;">No creatures in library.</p>`;
     return;
   }
-  availableShapes.forEach(s => {
+  summonableShapes.forEach(s => {
     const div = document.createElement("div");
     div.className = "shape-card interactive";
     div.innerHTML = `
       <img src="${s.url}" class="shape-img">
       <div class="shape-info">
         <span class="shape-name">${s.name}</span>
-        <span class="shape-size">Size: ${s.size || 1}x</span>
+        <span class="shape-size">${formatSizeLabel(s.size)}</span>
       </div>
       <div class="action-indicator" title="Summon">${ICON_SUMMON}</div>
     `;
@@ -509,9 +544,13 @@ function renderLibraryList() {
   availableShapes.forEach(s => {
     const div = document.createElement("div");
     div.className = "shape-card static";
+    const summonText = s.summonable === false ? "Hidden from Summons" : "Summonable";
     div.innerHTML = `
       <img src="${s.url}" class="shape-img">
-      <div class="shape-info"><span class="shape-name">${s.name}</span></div>
+      <div class="shape-info">
+        <span class="shape-name">${s.name}</span>
+        <span class="shape-size">${formatSizeLabel(s.size)} • ${summonText}</span>
+      </div>
       <button class="icon-btn danger-icon" title="Delete">${ICON_TRASH}</button>
     `;
     div.querySelector("button").addEventListener("click", (e) => {
@@ -714,7 +753,54 @@ function setLibraryFormEnabled(enabled) {
   if (addBtn) addBtn.disabled = !enabled;
   if (nameInput) nameInput.disabled = !enabled;
   if (sizeInput) sizeInput.disabled = !enabled;
+  const summonToggle = document.getElementById(SUMMONABLE_TOGGLE_ID);
+  if (summonToggle) summonToggle.disabled = !enabled;
   if (previewArea && !enabled) previewArea.style.display = "none";
+}
+
+// ------------------------------
+// BATCH LOGIC
+// ------------------------------
+async function onAddButtonClick() {
+  if (batch.active) { await saveBatchCurrentAndNext(); return; }
+
+  const nameInput = $("#input-name");
+  const name = nameInput?.value?.trim();
+  const size = getLibrarySizeCells();
+  const summonable = document.getElementById(SUMMONABLE_TOGGLE_ID)?.checked !== false;
+
+  if (!name || !currentSelectionIds.length || !currentSelectedImage) return;
+
+  setPreviewLoading(true);
+  try {
+    const items = await OBR.scene.items.getItems([currentSelectionIds[0]]);
+    const item = items?.[0];
+    if (!item || !isImage(item) || !item.image?.url) return;
+
+    const newShape = {
+      v: 1,
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name,
+      size: size || 1,
+      url: item.image.url,
+      imgWidth: item.image.width,
+      imgHeight: item.image.height,
+      summonable,
+    };
+
+    const newLibrary = normalizeLibrary([...availableShapes, newShape]);
+    availableShapes = newLibrary;
+    await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
+    if (nameInput) nameInput.value = "";
+    updateLibraryHelperText("Saved to library.", "var(--text-main)");
+    OBR.notification.show("Saved to library");
+  } catch (e) {
+    console.error(e);
+    OBR.notification.show("Failed to save.", "ERROR");
+  } finally {
+    setPreviewLoading(false);
+    syncSingleSaveButton();
+  }
 }
 
 // ------------------------------
@@ -722,7 +808,7 @@ function setLibraryFormEnabled(enabled) {
 // ------------------------------
 function startBatch(selectionIds) {
   batch.active = true; batch.ids = [...selectionIds]; batch.index = 0; batch.saved = 0; batch.skipped = 0; batch.complete = null;
-  showBatchCompleteUI(false); showBatchUI(true); void loadBatchCurrentItem();
+  showBatchCompleteUI(false); showBatchUI(true); setLibraryFormEnabled(true); void loadBatchCurrentItem();
 }
 async function loadBatchCurrentItem() {
   const addBtn = $("#btn-add-shape"); const nameInput = $("#input-name"); const previewArea = $("#preview-area"); const previewImg = $("#preview-img"); const status = $("#batch-status");
@@ -736,7 +822,8 @@ async function loadBatchCurrentItem() {
   currentSelectedImage = item.image.url;
   if (previewImg) { previewImg.onload = () => setPreviewLoading(false); previewImg.onerror = () => setPreviewLoading(false); previewImg.src = currentSelectedImage; } else { setPreviewLoading(false); }
   if (addBtn) addBtn.innerText = "Save & Next";
-  if (nameInput) { nameInput.value = item.text?.plainText?.trim() || ""; nameInput.focus(); nameInput.select(); }
+  if (nameInput) { nameInput.disabled = false; nameInput.value = item.text?.plainText?.trim() || ""; nameInput.focus(); nameInput.select(); }
+  setLibrarySizeInput(getLibrarySizeCells());
   syncBatchButtons();
 }
 function syncBatchButtons() {
@@ -745,11 +832,13 @@ function syncBatchButtons() {
   if (addBtn) addBtn.disabled = !canSave;
 }
 async function saveBatchCurrentAndNext() {
-  const name = $("#input-name")?.value?.trim(); const size = $("#input-size")?.value;
+  const name = $("#input-name")?.value?.trim();
+  const size = getLibrarySizeCells();
+  const summonable = document.getElementById(SUMMONABLE_TOGGLE_ID)?.checked !== false;
   if (!name) return;
   setPreviewLoading(true);
   const currentId = batch.ids[batch.index]; const items = await OBR.scene.items.getItems([currentId]); const item = items?.[0];
-  const newShape = { v: 1, id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name, size: size || 1, url: item.image.url, imgWidth: item.image.width, imgHeight: item.image.height };
+  const newShape = { v: 1, id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name, size: size || 1, url: item.image.url, imgWidth: item.image.width, imgHeight: item.image.height, summonable };
   const newLibrary = normalizeLibrary([...availableShapes, newShape]);
   await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
   batch.saved++; batch.index++;
@@ -774,6 +863,9 @@ async function finishBatch() {
   if ($("#preview-area")) $("#preview-area").style.display = "none";
   if ($("#btn-add-shape")) { $("#btn-add-shape").disabled = true; $("#btn-add-shape").innerText = "Save to Library"; }
   if ($("#input-name")) $("#input-name").value = "";
+  setLibrarySizeInput(1);
+  const summonToggle = document.getElementById(SUMMONABLE_TOGGLE_ID);
+  if (summonToggle) summonToggle.checked = true;
   updateLibraryHelperText("Batch complete."); showBatchCompleteUI(true); OBR.notification.show("Batch complete.");
 }
 function dismissBatchComplete() {
@@ -805,7 +897,8 @@ async function updateSelectionUI(selection) {
     addBtn.disabled = false;
     addBtn.onclick = () => startBatch(selection);
     if (preview) preview.style.display = "none";
-    if (nameInput) nameInput.disabled = true;
+    if (nameInput) nameInput.disabled = false;
+    setLibraryFormEnabled(true);
     return;
   }
 

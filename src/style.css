@@ -153,6 +153,15 @@ option {
   margin-bottom: 6px;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-main);
+}
+
 /* 4. Buttons */
 button {
   width: 100%;
