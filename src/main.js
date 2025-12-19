@@ -855,6 +855,13 @@ function sanitizeShapeName(name) {
 OBR.onReady(async () => {
   console.log("[WildShape] Extension Ready");
 
+  try {
+    const iconUrl = await OBR.assets.getUrl("/icon.svg");
+    await OBR.action.setIcon(iconUrl);
+  } catch (e) {
+    console.error("Failed to set action icon", e);
+  }
+
   const app = $("#app");
   if (!app) return;
 

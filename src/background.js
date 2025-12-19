@@ -71,14 +71,16 @@ async function restoreItems(ids) {
   }
 }
 
-function setupContextMenus() {
+async function setupContextMenus() {
+  const iconUrl = await OBR.assets.getUrl("/icon.svg");
+
   // 1) Wild Shape (open extension to Transform tab)
   OBR.contextMenu.create({
     id: `${ID}/ctx-open-wildshape`,
     icons: [
       {
-        icon: "/icon.svg",
-        label: "Wild Shape",
+        icon: iconUrl,
+        label: "Wildshape",
         filter: {
           min: 1,
           max: 1,
@@ -98,8 +100,8 @@ function setupContextMenus() {
     id: `${ID}/ctx-save-as-shape`,
     icons: [
       {
-        icon: "/icon.svg",
-        label: "Save as Shape",
+        icon: iconUrl,
+        label: "Add Shape",
         filter: {
           min: 1,
           max: 1,
@@ -120,8 +122,8 @@ function setupContextMenus() {
     id: `${ID}/ctx-revert-shape`,
     icons: [
       {
-        icon: "/revert.svg",
-        label: "Revert Shape",
+        icon: iconUrl,
+        label: "Revert Form",
         filter: {
           min: 1,
           max: 1,
@@ -142,5 +144,5 @@ function setupContextMenus() {
 
 OBR.onReady(() => {
   console.log("[WildShape] Background Ready");
-  setupContextMenus();
+  void setupContextMenus();
 });
