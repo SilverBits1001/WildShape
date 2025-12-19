@@ -10,7 +10,7 @@ const METADATA_STATE = `${ID}/state`;
 const SIZE_PREF_KEY = `${ID}:transformSizeMode`;
 const SIZE_SELECT_ID = "wildshape-size-select";
 
-// New transform options
+// Transform options
 const KEEP_FOOTPRINT_KEY = `${ID}:keepFootprint`;
 const KEEP_FOOTPRINT_ID = "wildshape-keep-footprint-toggle";
 
@@ -34,6 +34,13 @@ const ACTIVE_REVERT_ALL_ID = "wildshape-active-revert-all";
 const BATCH_LOADING_ID = "wildshape-batch-loading";
 const BATCH_LOADING_STYLE_ID = "wildshape-batch-loading-style";
 
+// Tabs
+const ACTIVE_TAB_KEY = `${ID}:activeTab`;
+const REQUEST_TAB_KEY = `${ID}:requestTab`;
+
+// Back-compat key used by the background page snippet I gave earlier
+const OPEN_TAB_KEY = `${ID}:openTab`;
+
 let availableShapes = [];
 let currentSelectedImage = null;
 
@@ -54,10 +61,6 @@ const batch = {
 };
 
 let ignoreNextSelectionChange = false;
-
-// Tabs
-const ACTIVE_TAB_KEY = `${ID}:activeTab`;
-const REQUEST_TAB_KEY = `${ID}:requestTab`;
 
 // ------------------------------
 // ICONS (SVGs)
@@ -158,6 +161,41 @@ function validateOriginal(original) {
 }
 
 // ------------------------------
+// LIBRARY ENTRY VALIDATION (safer metadata)
+// ------------------------------
+function isValidShapeEntry(s) {
+  if (!s || typeof s !== "object") return false;
+  if (typeof s.id !== "string" || !s.id) return false;
+  if (typeof s.name !== "string" || !s.name.trim()) return false;
+  if (typeof s.url !== "string" || !s.url) return false;
+  return true;
+}
+
+function normalizeLibrary(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const cleaned = [];
+
+  for (const s of list) {
+    if (!isValidShapeEntry(s)) continue;
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+
+    cleaned.push({
+      v: 1,
+      id: s.id,
+      name: String(s.name || "").trim(),
+      size: Number(s.size || 1) || 1,
+      url: s.url,
+      imgWidth: isPositiveNumber(Number(s.imgWidth)) ? Number(s.imgWidth) : undefined,
+      imgHeight: isPositiveNumber(Number(s.imgHeight)) ? Number(s.imgHeight) : undefined,
+    });
+  }
+
+  return cleaned;
+}
+
+// ------------------------------
 // BATCH LOADING SPINNER (Preview)
 // ------------------------------
 function ensureLoadingSpinnerStyles() {
@@ -216,18 +254,21 @@ function setPreviewLoading(isLoading) {
 // ------------------------------
 // TRANSFORM OPTIONS
 // ------------------------------
+const ALLOWED_SIZE_MODES = new Set(["tiny", "small", "medium", "large", "huge", "gargantuan"]);
+
 function getSizeMode() {
   const sel = document.getElementById(SIZE_SELECT_ID);
   const fromUI = sel?.value;
   const fromStorage = localStorage.getItem(SIZE_PREF_KEY);
   const v = fromUI || fromStorage || "medium";
-  return v;
+  return ALLOWED_SIZE_MODES.has(v) ? v : "medium";
 }
 
 function setSizeMode(v) {
-  localStorage.setItem(SIZE_PREF_KEY, v);
+  const safe = ALLOWED_SIZE_MODES.has(v) ? v : "medium";
+  localStorage.setItem(SIZE_PREF_KEY, safe);
   const sel = document.getElementById(SIZE_SELECT_ID);
-  if (sel) sel.value = v;
+  if (sel) sel.value = safe;
 }
 
 function sizeModeToCells(mode) {
@@ -285,7 +326,7 @@ function setTransformOptionsCollapsed(v) {
   }
 }
 
-// When Keep Footprint is enabled, size dropdown is disabled AND ignored.
+// When Keep footprint is enabled, size dropdown is disabled AND ignored.
 function syncSizingDisabledByKeepFootprint() {
   const keep = getKeepFootprint();
   const sel = document.getElementById(SIZE_SELECT_ID);
@@ -436,7 +477,7 @@ function ensureTransformSizingUI() {
       return { label: l, cb };
     };
 
-    // This toggle now does exactly what Keep Footprint used to do.
+    // This toggle does what "Keep footprint" used to do: preserve current footprint (swap art).
     const keepFootprint = mkToggle(KEEP_FOOTPRINT_ID, "Keep footprint (swap art)");
     keepFootprint.cb.checked = getKeepFootprint();
     keepFootprint.cb.addEventListener("change", () => {
@@ -457,6 +498,7 @@ function ensureTransformSizingUI() {
     wrap.appendChild(headerBtn);
     wrap.appendChild(content);
 
+    // Place within transform section
     const activeWrap = document.getElementById(ACTIVE_WRAP_ID);
     if (activeWrap && activeWrap.parentElement === transformView) {
       activeWrap.insertAdjacentElement("afterend", wrap);
@@ -797,17 +839,8 @@ function activateTab(targetId) {
 
 function requestOpenTab(targetId) {
   localStorage.setItem(REQUEST_TAB_KEY, targetId);
-  // If UI is already present, switch immediately.
   const view = document.getElementById(targetId);
   if (view) activateTab(targetId);
-}
-
-// ------------------------------
-// CONTEXT MENU ACTIONS
-// ------------------------------
-async function openTransformFromContext() {
-  requestOpenTab("view-transform");
-  await OBR.action.open();
 }
 
 function sanitizeShapeName(name) {
@@ -816,115 +849,11 @@ function sanitizeShapeName(name) {
   return raw.replace(/^🐾\s+/g, "").trim();
 }
 
-async function saveTokenAsShape(context) {
-  try {
-    const it = context?.items?.[0];
-    if (!it || !isImage(it) || !it.image?.url) {
-      OBR.notification.show("That token has no image URL to save.", "WARNING");
-      return;
-    }
-
-    const url = it.image.url;
-    let imgWidth = Number(it.image.width || 0);
-    let imgHeight = Number(it.image.height || 0);
-
-    if (!imgWidth || !imgHeight) {
-      const dims = await loadImageDimensions(url);
-      if (dims?.width && dims?.height) {
-        imgWidth = dims.width;
-        imgHeight = dims.height;
-      }
-    }
-
-    const baseName =
-      sanitizeShapeName(it.text?.plainText) ||
-      sanitizeShapeName(it.metadata?.[METADATA_STATE]?.shapeName) ||
-      "New Shape";
-
-    // Avoid name collisions lightly
-    const existingSameName = availableShapes.filter((s) => (s?.name || "").trim() === baseName);
-    const finalName = existingSameName.length ? `${baseName} (${existingSameName.length + 1})` : baseName;
-
-    const newShape = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name: finalName,
-      size: 1,
-      url,
-      imgWidth,
-      imgHeight,
-    };
-
-    const newLibrary = [...availableShapes, newShape];
-    await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
-    OBR.notification.show(`Saved shape: ${finalName}`);
-  } catch (e) {
-    console.error(e);
-    OBR.notification.show("Failed to save shape.", "ERROR");
-  }
-}
-
 // ------------------------------
 // OBR READY
 // ------------------------------
 OBR.onReady(async () => {
   console.log("[WildShape] Extension Ready");
-
-  // Context menu: only show when exactly one item is selected
-  OBR.contextMenu.create({
-    id: `${ID}/open-transform`,
-    icons: [
-      {
-        icon: "/icon.svg",
-        label: "Wild Shape",
-        filter: {
-          min: 1,
-          max: 1,
-          every: [{ key: "layer", value: "CHARACTER" }],
-        },
-      },
-    ],
-    onClick: async () => {
-      await openTransformFromContext();
-    },
-  });
-
-  // Context menu: GM only, save token art as a shape (single selection only)
-  OBR.contextMenu.create({
-    id: `${ID}/save-as-shape`,
-    icons: [
-      {
-        icon: "/icon.svg",
-        label: "Save as Shape",
-        roles: ["GM"],
-        filter: {
-          min: 1,
-          max: 1,
-          every: [{ key: "layer", value: "CHARACTER" }],
-        },
-      },
-    ],
-    onClick: saveTokenAsShape,
-  });
-
-  // Context menu: revert appears only when token is wildshaped (single selection only)
-  OBR.contextMenu.create({
-    id: `${ID}/revert`,
-    icons: [
-      {
-        icon: "/revert.svg",
-        label: "Revert Shape",
-        filter: {
-          min: 1,
-          max: 1,
-          every: [
-            { key: "layer", value: "CHARACTER" },
-            { key: ["metadata", METADATA_ORIGINAL], operator: "!=", value: undefined },
-          ],
-        },
-      },
-    ],
-    onClick: handleRevert,
-  });
 
   const app = $("#app");
   if (!app) return;
@@ -952,7 +881,15 @@ OBR.onReady(async () => {
   try {
     const metadata = await OBR.room.getMetadata();
     const data = metadata?.[METADATA_LIBRARY];
-    availableShapes = Array.isArray(data) ? data : [];
+    const cleaned = normalizeLibrary(data);
+
+    availableShapes = cleaned;
+
+    // If we cleaned anything, write it back once (safer metadata + removes junk).
+    if (Array.isArray(data) && cleaned.length !== data.length) {
+      await OBR.room.setMetadata({ [METADATA_LIBRARY]: cleaned });
+    }
+
     renderShapeList();
     renderLibraryList();
   } catch (e) {
@@ -961,7 +898,7 @@ OBR.onReady(async () => {
 
   OBR.room.onMetadataChange((metadata) => {
     const data = metadata?.[METADATA_LIBRARY];
-    availableShapes = Array.isArray(data) ? data : [];
+    availableShapes = normalizeLibrary(data);
     renderShapeList();
     renderLibraryList();
   });
@@ -979,10 +916,11 @@ OBR.onReady(async () => {
     updateSelectionUI(player.selection);
   });
 
-  // Apply any requested tab open (from context menu), else restore last tab
-  const requested = localStorage.getItem(REQUEST_TAB_KEY);
+  // Apply any requested tab open (from background/context), else restore last tab
+  const requested = localStorage.getItem(REQUEST_TAB_KEY) || localStorage.getItem(OPEN_TAB_KEY);
   if (requested) {
     localStorage.removeItem(REQUEST_TAB_KEY);
+    localStorage.removeItem(OPEN_TAB_KEY);
     activateTab(requested);
   } else {
     const last = localStorage.getItem(ACTIVE_TAB_KEY);
@@ -1015,8 +953,7 @@ async function applyShape(shape) {
     const addPrefix = getLabelPrefix();
 
     // Keep footprint ignores dropdown and preserves current footprint.
-    const sizeMode = getSizeMode();
-    const forcedCells = keepFootprint ? null : sizeModeToCells(sizeMode);
+    const forcedCells = keepFootprint ? null : sizeModeToCells(getSizeMode());
 
     let playerName = "";
     try {
@@ -1059,7 +996,7 @@ async function applyShape(shape) {
         const currentCellsX = (preImgW / preGridDpi) * (preScale.x || 1);
         const desiredCells = forcedCells ?? currentCellsX;
 
-        // Always update intrinsic size to avoid cropping issues
+        // Always update intrinsic size (prevents cropping issues)
         item.image.url = shape.url;
         item.image.width = targetDims.width;
         item.image.height = targetDims.height;
@@ -1099,11 +1036,6 @@ async function applyShape(shape) {
     console.error(error);
     OBR.notification.show("Error applying shape.", "ERROR");
   }
-}
-
-async function handleRevert(context) {
-  const ids = context?.items?.map((i) => i.id) || [];
-  await restoreItems(ids);
 }
 
 async function restoreItems(ids) {
@@ -1207,7 +1139,8 @@ async function saveShapeToLibrarySingle() {
   const item = items?.[0];
 
   const newShape = {
-    id: Date.now().toString(),
+    v: 1,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name,
     size: size || 1,
     url: currentSelectedImage,
@@ -1215,7 +1148,7 @@ async function saveShapeToLibrarySingle() {
     imgHeight: item?.image?.height,
   };
 
-  const newLibrary = [...availableShapes, newShape];
+  const newLibrary = normalizeLibrary([...availableShapes, newShape]);
   await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
 
   if ($("#input-name")) $("#input-name").value = "";
@@ -1316,6 +1249,7 @@ async function saveBatchCurrentAndNext() {
   const item = items?.[0];
 
   const newShape = {
+    v: 1,
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name,
     size: size || 1,
@@ -1324,7 +1258,7 @@ async function saveBatchCurrentAndNext() {
     imgHeight: item.image.height,
   };
 
-  const newLibrary = [...availableShapes, newShape];
+  const newLibrary = normalizeLibrary([...availableShapes, newShape]);
   await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
 
   batch.saved++;
