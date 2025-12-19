@@ -67,6 +67,105 @@ const batch = { active: false, ids: [], index: 0, saved: 0, skipped: 0, complete
 let ignoreNextSelectionChange = false;
 
 // ------------------------------
+// CORE ACTIONS
+// ------------------------------
+async function applyShape(shape) {
+  if (!shape) return;
+
+  const selection = await OBR.player.getSelection();
+  const ids = Array.isArray(selection) ? selection : [];
+  if (!ids.length) {
+    OBR.notification.show("Select at least one token to transform.", "WARNING");
+    return;
+  }
+
+  const items = await OBR.scene.items.getItems(ids);
+  const targets = items.filter((i) => isImage(i) && i.image && i.grid);
+  if (!targets.length) {
+    OBR.notification.show("Only image tokens can be transformed.", "WARNING");
+    return;
+  }
+
+  const dims = await ensureShapeDims(shape);
+  if (!dims?.width || !dims?.height) {
+    OBR.notification.show("Unable to load shape art.", "ERROR");
+    return;
+  }
+
+  const artOnly = getArtOnly();
+  const sizeCells = sizeValueToCells(shape?.size ?? getSizeMode());
+  const namePrefix = getLabelPrefix() ? "🐾 " : "";
+
+  await OBR.scene.items.updateItems(targets, (updating) => {
+    for (const item of updating) {
+      if (!isImage(item) || !item.image || !item.grid) continue;
+
+      if (!item.metadata) item.metadata = {};
+      if (!item.metadata[METADATA_ORIGINAL]) {
+        item.metadata[METADATA_ORIGINAL] = {
+          url: item.image.url,
+          imgWidth: item.image.width,
+          imgHeight: item.image.height,
+          gridDpi: item.grid.dpi,
+          gridOffset: item.grid.offset,
+          scale: safeCloneScale(item.scale),
+          rotation: item.rotation,
+          name: item.text?.plainText,
+        };
+      }
+
+      item.metadata[METADATA_STATE] = {
+        shapeId: shape.id,
+        shapeName: shape.name,
+      };
+
+      item.image.url = shape.url;
+      item.image.width = dims.width;
+      item.image.height = dims.height;
+
+      if (!artOnly) {
+        const dpi = Number(dims.width) / (sizeCells || 1);
+        item.grid.dpi = Number.isFinite(dpi) && dpi > 0 ? dpi : item.grid.dpi;
+        item.grid.offset = { x: dims.width / 2, y: dims.height / 2 };
+        item.scale = { x: 1, y: 1 };
+        item.rotation = 0;
+      }
+
+      if (item.text && shape.name) {
+        item.text.plainText = `${namePrefix}${shape.name}`;
+        item.text.richText = item.text.richText || [];
+        if (item.text.style) {
+          item.text.style.textAlign = item.text.style.textAlign || "CENTER";
+        } else {
+          item.text.style = { textAlign: "CENTER" };
+        }
+      }
+    }
+  });
+
+  OBR.notification.show("Transformed!");
+  await refreshActiveNow();
+}
+
+async function deleteShape(id) {
+  if (!id) return;
+  const next = availableShapes.filter((s) => s.id !== id);
+  if (next.length === availableShapes.length) return;
+
+  try {
+    availableShapes = next;
+    await OBR.room.setMetadata({ [METADATA_LIBRARY]: next });
+    renderShapeList();
+    renderLibraryList();
+    renderAvailableSummonsList();
+    OBR.notification.show("Removed from library");
+  } catch (e) {
+    console.error(e);
+    OBR.notification.show("Failed to delete shape.", "ERROR");
+  }
+}
+
+// ------------------------------
 // ICONS
 // ------------------------------
 const ICON_TRANSFORM = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`;
@@ -1045,14 +1144,13 @@ async function summonCreature(shape, options) {
     scale: { x: 1, y: 1 },
     image: { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" },
     grid: { dpi: dims.width / cells, offset: { x: dims.width/2, y: dims.height/2 } },
-    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity:1, strokeOpacity:1 }, richText: [] },
+    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity:1, strokeOpacity:1, textAlign: "CENTER" }, richText: [] },
     metadata: {
       [METADATA_SUMMON]: {
         v: 1, createdBy: SUMMON_CREATED_BY, summonId: uuid(), libraryId: shape.id,
         summonerName: options.summoner?.text?.plainText || "", createdAt: Date.now()
       }
     },
-    createdUserId: OBR.player.id
   };
 
   await OBR.scene.items.addItems([newItem]);
