@@ -71,6 +71,7 @@ body {
 h1, h2, h3, h4 { margin: 0 0 var(--space-sm) 0; font-weight: 600; color: #fff; }
 p { margin: 0 0 var(--space-sm) 0; }
 .hidden { display: none !important; }
+.small { font-size: 12px; color: var(--text-muted); }
 
 /* --- SCROLLBARS --- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -89,7 +90,7 @@ p { margin: 0 0 var(--space-sm) 0; }
   padding: 4px;
   border-radius: var(--radius-lg);
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   margin-bottom: var(--space-lg);
   border: 1px solid var(--border-color);

@@ -13,6 +13,7 @@
       <div class="tabs">
         <span class="tab active" data-target="view-transform">Transform</span>
         <span class="tab" data-target="view-library">Library</span>
+        <span class="tab" data-target="view-summons">Summons</span>
       </div>
 
       <!-- VIEW 1: Transform List -->
@@ -48,6 +49,33 @@
         <hr style="border-color:#444; margin: 1rem 0;">
         <h3>Existing Shapes</h3>
         <div id="library-list" class="shape-list"></div>
+      </div>
+
+      <!-- VIEW 3: Summons -->
+      <div id="view-summons" class="view hidden">
+        <div class="card" id="summon-control-card">
+          <h3>Summon Familiar</h3>
+          <p id="summon-helper" class="small" style="color:#9ca3af; margin-top: 0;">Select a token to summon adjacent.</p>
+
+          <div class="input-group">
+            <label class="input-label" for="summon-select">Choose familiar</label>
+            <select id="summon-select"></select>
+          </div>
+
+          <button id="summon-btn" class="primary" disabled>Summon</button>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+            <div>
+              <h3 style="margin-bottom:4px;">Active Summons (<span id="summon-count">0</span>)</h3>
+              <p id="summon-empty" class="small" style="color:#9ca3af; margin:0;">No active summons.</p>
+            </div>
+            <button id="summon-unsummon-all" class="danger" disabled>Unsummon All</button>
+          </div>
+
+          <div id="summon-list" class="shape-container"></div>
+        </div>
       </div>
 
     </div>

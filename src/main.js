@@ -5,6 +5,8 @@ const ID = "com.tutorial.wildshape";
 const METADATA_LIBRARY = `${ID}/library`;
 const METADATA_ORIGINAL = `${ID}/original`;
 const METADATA_STATE = `${ID}/state`;
+const METADATA_SUMMON = `${ID}/summon`;
+const SUMMON_CREATED_BY = "WildShapeExtension";
 
 // Transform sizing preference (UI dropdown)
 const SIZE_PREF_KEY = `${ID}:transformSizeMode`;
@@ -37,12 +39,16 @@ const BATCH_LOADING_STYLE_ID = "wildshape-batch-loading-style";
 // Tabs
 const ACTIVE_TAB_KEY = `${ID}:activeTab`;
 const REQUEST_TAB_KEY = `${ID}:requestTab`;
+const REQUEST_SUMMON_POSITION_KEY = `${ID}:summonPosition`;
 
 // Back-compat key used by the background page snippet I gave earlier
 const OPEN_TAB_KEY = `${ID}:openTab`;
 
 let availableShapes = [];
 let currentSelectedImage = null;
+let activeSummons = [];
+let pendingSummonPosition = null;
+let currentSelectionIds = [];
 
 // Cache image dimensions by URL
 const imageDimCache = new Map();
@@ -835,6 +841,12 @@ function activateTab(targetId) {
     normalizeLibraryHelperText();
     void OBR.player.getSelection().then(updateSelectionUI);
   }
+
+  if (targetId === "view-summons") {
+    ensureSummonsUI();
+    renderActiveSummonsList();
+    syncSummonUI(currentSelectionIds);
+  }
 }
 
 function requestOpenTab(targetId) {
@@ -847,6 +859,60 @@ function sanitizeShapeName(name) {
   const raw = (name || "").trim();
   if (!raw) return "";
   return raw.replace(/^🐾\s+/g, "").trim();
+}
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function buildUniqueSummonName(baseName) {
+  const safeBase = sanitizeShapeName(baseName) || "Summon";
+  const items = await OBR.scene.items.getItems((item) => item.layer === "CHARACTER" && item.text?.plainText);
+  const matcher = new RegExp(`^${escapeRegex(safeBase)}(?:\\s(\\d+))?$`, "i");
+
+  let maxSuffix = 0;
+  for (const item of items) {
+    const text = item.text?.plainText || "";
+    const match = matcher.exec(text);
+    if (match) {
+      const suffix = Number(match[1] || 1);
+      if (Number.isFinite(suffix)) {
+        maxSuffix = Math.max(maxSuffix, suffix);
+      }
+    }
+  }
+
+  const next = maxSuffix + 1;
+  return next === 1 ? safeBase : `${safeBase} ${next}`;
+}
+
+function getItemBounds(item) {
+  const w = Number(item?.image?.width || 0) * Number(item?.scale?.x || 1);
+  const h = Number(item?.image?.height || 0) * Number(item?.scale?.y || 1);
+  return { w, h };
+}
+
+function isAreaFree(candidatePos, candidateSize, existingItems) {
+  const halfW = (candidateSize?.w || 0) / 2;
+  const halfH = (candidateSize?.h || 0) / 2;
+  if (!Number.isFinite(halfW) || !Number.isFinite(halfH)) return true;
+
+  for (const item of existingItems) {
+    if (!item?.position || !item.image) continue;
+    const { w, h } = getItemBounds(item);
+    if (!w || !h) continue;
+
+    const dx = Math.abs(item.position.x - candidatePos.x);
+    const dy = Math.abs(item.position.y - candidatePos.y);
+    if (dx < halfW + w / 2 && dy < halfH + h / 2) return false;
+  }
+
+  return true;
+}
+
+function cellSizeFromItem(item) {
+  const dpi = Number(item?.grid?.dpi || 0);
+  return dpi > 0 ? dpi : 100;
 }
 
 // ------------------------------
@@ -869,6 +935,7 @@ OBR.onReady(async () => {
   ensureBatchUI();
   ensureActiveTransformedUI();
   ensureTransformSizingUI();
+  ensureSummonsUI();
   normalizeLibraryHelperText();
 
   try {
@@ -899,6 +966,7 @@ OBR.onReady(async () => {
 
     renderShapeList();
     renderLibraryList();
+    renderSummonSelectOptions();
   } catch (e) {
     console.error(e);
   }
@@ -908,11 +976,15 @@ OBR.onReady(async () => {
     availableShapes = normalizeLibrary(data);
     renderShapeList();
     renderLibraryList();
+    renderSummonSelectOptions();
+    syncSummonUI(currentSelectionIds);
   });
 
   OBR.scene.items.onChange((items) => {
     buildActiveFromSceneItems(items);
     if (isTransformViewActive()) renderActiveTransformedList();
+    buildActiveSummonsFromScene(items);
+    renderActiveSummonsList();
   });
 
   OBR.player.onChange((player) => {
@@ -934,9 +1006,22 @@ OBR.onReady(async () => {
     if (last) activateTab(last);
   }
 
+  try {
+    const storedPos = localStorage.getItem(REQUEST_SUMMON_POSITION_KEY);
+    if (storedPos) {
+      localStorage.removeItem(REQUEST_SUMMON_POSITION_KEY);
+      const parsed = JSON.parse(storedPos);
+      setPendingSummonPosition(parsed);
+      activateTab("view-summons");
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
   const selection = await OBR.player.getSelection();
   updateSelectionUI(selection);
   await refreshActiveNow();
+  await refreshSummonsNow();
 });
 
 // ------------------------------
@@ -1351,6 +1436,8 @@ async function updateSelectionUI(selection) {
   const libraryActive = isLibraryViewActive();
   normalizeLibraryHelperText();
 
+  currentSelectionIds = Array.isArray(selection) ? [...selection] : [];
+
   if (batch.complete && libraryActive) {
     if (!selection || selection.length === 0) {
       showBatchCompleteUI(true);
@@ -1456,6 +1543,309 @@ async function updateSelectionUI(selection) {
     addBtn.innerText = "Select a Token First";
     if (previewArea) previewArea.style.display = "none";
   }
+
+  syncSummonUI(selection);
+}
+
+// ------------------------------
+// SUMMONS
+// ------------------------------
+function setPendingSummonPosition(pos) {
+  pendingSummonPosition = pos && typeof pos.x === "number" && typeof pos.y === "number" ? pos : null;
+  const helper = $("#summon-helper");
+  if (helper && pendingSummonPosition) {
+    helper.innerText = "Summon will appear at the chosen map position.";
+  }
+  syncSummonUI(currentSelectionIds);
+}
+
+function renderSummonSelectOptions() {
+  const select = $("#summon-select");
+  if (!select) return;
+
+  const prev = select.value;
+  select.innerHTML = "";
+
+  if (!availableShapes.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.innerText = "No creatures in library yet.";
+    select.appendChild(opt);
+    select.disabled = true;
+    return;
+  }
+
+  select.disabled = false;
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.innerText = "Choose a familiar";
+  select.appendChild(placeholder);
+
+  availableShapes.forEach((shape) => {
+    const opt = document.createElement("option");
+    opt.value = shape.id;
+    opt.innerText = shape.name || "Unnamed";
+    select.appendChild(opt);
+  });
+
+  if (prev && availableShapes.some((s) => s.id === prev)) {
+    select.value = prev;
+  }
+}
+
+function syncSummonUI(selection) {
+  const helper = $("#summon-helper");
+  const summonBtn = $("#summon-btn");
+  const select = $("#summon-select");
+
+  const selectionIds = Array.isArray(selection) ? selection : currentSelectionIds;
+
+  const hasSelection = selectionIds && selectionIds.length > 0;
+  const hasPendingPoint = !!pendingSummonPosition;
+
+  if (helper) {
+    if (hasPendingPoint) {
+      helper.innerText = "Summon will appear at the clicked position.";
+    } else if (!hasSelection) {
+      helper.innerText = "Select a token to summon adjacent.";
+    } else if (selectionIds.length > 1) {
+      helper.innerText = "Multiple tokens selected; using the first as summoner.";
+    } else {
+      helper.innerText = "Summon will appear adjacent to the selected token.";
+    }
+  }
+
+  const hasChoice = !!select && !!select.value && !select.disabled;
+  if (summonBtn) summonBtn.disabled = !hasChoice || (!hasSelection && !hasPendingPoint);
+}
+
+function buildActiveSummonsFromScene(items) {
+  activeSummons = (items || [])
+    .filter((it) => it.metadata?.[METADATA_SUMMON]?.createdBy === SUMMON_CREATED_BY)
+    .map((it) => {
+      const meta = it.metadata?.[METADATA_SUMMON] || {};
+      return {
+        id: it.id,
+        name: it.text?.plainText || "Summon",
+        thumbUrl: it.image?.url || "",
+        summonerName: meta.summonerName || "",
+      };
+    });
+
+  activeSummons.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+}
+
+function renderActiveSummonsList() {
+  const list = $("#summon-list");
+  const empty = $("#summon-empty");
+  const count = $("#summon-count");
+  const unsummonAll = $("#summon-unsummon-all");
+
+  if (!list || !empty || !count) return;
+
+  list.innerHTML = "";
+
+  if (!activeSummons.length) {
+    empty.style.display = "block";
+    count.innerText = "0";
+    if (unsummonAll) unsummonAll.disabled = true;
+    list.style.display = "none";
+    return;
+  }
+
+  empty.style.display = "none";
+  count.innerText = `${activeSummons.length}`;
+  if (unsummonAll) unsummonAll.disabled = false;
+  list.style.display = "flex";
+
+  for (const s of activeSummons) {
+    const row = document.createElement("div");
+    row.className = "shape-card static";
+    row.style.gridTemplateColumns = "40px 1fr 110px";
+
+    const name = s.name || "Summon";
+    const summonedBy = s.summonerName
+      ? `<span class="shape-size" style="opacity:.8;">Summoned by ${s.summonerName}</span>`
+      : "";
+
+    row.innerHTML = `
+      <img src="${s.thumbUrl}" class="shape-img">
+      <div class="shape-info">
+        <span class="shape-name">${name}</span>
+        ${summonedBy}
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="primary" style="padding:6px 10px; width:auto;" data-action="select">Select</button>
+        <button class="danger" style="padding:6px 10px; width:auto;" data-action="unsummon">Unsummon</button>
+      </div>
+    `;
+
+    row.querySelector('[data-action="select"]').addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await OBR.player.select([s.id], true);
+      } catch (_) {}
+    });
+
+    row.querySelector('[data-action="unsummon"]').addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await unsummonSummon(s.id);
+    });
+
+    list.appendChild(row);
+  }
+}
+
+async function refreshSummonsNow() {
+  const items = await OBR.scene.items.getItems();
+  buildActiveSummonsFromScene(items);
+  renderActiveSummonsList();
+}
+
+async function unsummonSummon(id) {
+  if (!id) return;
+  try {
+    await OBR.scene.items.deleteItems([id]);
+    await refreshSummonsNow();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function unsummonAll() {
+  try {
+    const ids = activeSummons.map((s) => s.id);
+    if (ids.length === 0) return;
+    await OBR.scene.items.deleteItems(ids);
+    await refreshSummonsNow();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function handleSummonClick() {
+  const select = $("#summon-select");
+  if (!select || !select.value) return;
+
+  const shape = availableShapes.find((s) => s.id === select.value);
+  if (!shape || !shape.url) {
+    OBR.notification.show("Choose a familiar with an image first.", "WARNING");
+    return;
+  }
+
+  const dims = await ensureShapeDims(shape);
+  if (!dims?.width || !dims?.height) {
+    OBR.notification.show("Could not load familiar image.", "ERROR");
+    return;
+  }
+
+  const summonName = await buildUniqueSummonName(shape.name || "Summon");
+
+  let targetPos = pendingSummonPosition;
+  let summonerItem = null;
+
+  if (!targetPos) {
+    if (!currentSelectionIds.length) {
+      OBR.notification.show("Select a token to summon adjacent.", "WARNING");
+      return;
+    }
+
+    const items = await OBR.scene.items.getItems([currentSelectionIds[0]]);
+    summonerItem = items?.[0];
+    if (!summonerItem?.position) {
+      OBR.notification.show("Could not read summoner position.", "ERROR");
+      return;
+    }
+
+    const cell = cellSizeFromItem(summonerItem);
+    const offsets = [
+      { x: cell, y: 0 },
+      { x: -cell, y: 0 },
+      { x: 0, y: cell },
+      { x: 0, y: -cell },
+    ];
+
+    const existing = await OBR.scene.items.getItems((it) => it.layer === "CHARACTER");
+    const candidateSize = { w: dims.width, h: dims.height };
+
+    for (const off of offsets) {
+      const candidate = { x: summonerItem.position.x + off.x, y: summonerItem.position.y + off.y };
+      if (isAreaFree(candidate, candidateSize, existing)) {
+        targetPos = candidate;
+        break;
+      }
+    }
+
+    if (!targetPos) {
+      if (isAreaFree(summonerItem.position, { w: dims.width, h: dims.height }, existing)) {
+        targetPos = { ...summonerItem.position };
+      } else {
+        OBR.notification.show("No space adjacent.", "WARNING");
+        return;
+      }
+    }
+  }
+
+  const sizeCells = Number(shape.size || 1) || 1;
+  const image = await OBR.scene.items.createImage({
+    image: { url: shape.url, width: dims.width, height: dims.height },
+    position: targetPos,
+    scale: { x: 1, y: 1 },
+    rotation: 0,
+    text: { plainText: summonName },
+    layer: "CHARACTER",
+    metadata: {
+      [METADATA_SUMMON]: {
+        v: 1,
+        createdBy: SUMMON_CREATED_BY,
+        summonId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        libraryId: shape.id,
+        summonerTokenId: summonerItem?.id,
+        summonerName: summonerItem?.text?.plainText || "",
+        createdAt: Date.now(),
+      },
+    },
+    grid: {
+      dpi: dims.width / sizeCells,
+      offset: { x: dims.width / 2, y: dims.height / 2 },
+    },
+  });
+
+  await OBR.scene.items.addItems([image]);
+  await refreshSummonsNow();
+  try {
+    await OBR.player.select([image.id], true);
+  } catch (_) {}
+
+  pendingSummonPosition = null;
+  renderActiveSummonsList();
+  syncSummonUI(currentSelectionIds);
+}
+
+function ensureSummonsUI() {
+  const summonBtn = $("#summon-btn");
+  const select = $("#summon-select");
+  const unsummonAllBtn = $("#summon-unsummon-all");
+
+  if (summonBtn && !summonBtn.dataset.bound) {
+    summonBtn.dataset.bound = "true";
+    summonBtn.addEventListener("click", () => void handleSummonClick());
+  }
+
+  if (select && !select.dataset.bound) {
+    select.dataset.bound = "true";
+    select.addEventListener("change", () => syncSummonUI(currentSelectionIds));
+  }
+
+  if (unsummonAllBtn && !unsummonAllBtn.dataset.bound) {
+    unsummonAllBtn.dataset.bound = "true";
+    unsummonAllBtn.addEventListener("click", () => void unsummonAll());
+  }
+
+  renderSummonSelectOptions();
+  renderActiveSummonsList();
+  syncSummonUI(currentSelectionIds);
 }
 
 // ------------------------------

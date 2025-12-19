@@ -3,6 +3,7 @@ import OBR, { isImage } from "@owlbear-rodeo/sdk";
 const ID = "com.tutorial.wildshape";
 const METADATA_ORIGINAL = `${ID}/original`;
 const METADATA_STATE = `${ID}/state`;
+const REQUEST_SUMMON_POSITION_KEY = `${ID}:summonPosition`;
 
 // Optional: lets the popover know what the user wanted to do.
 // Safe even if your main.js ignores it.
@@ -90,7 +91,7 @@ async function setupContextMenus() {
     ],
     onClick: async (context) => {
       const item = context.items?.[0];
-      requestOpen("transform", item?.id);
+      requestOpen("view-transform", item?.id);
       await OBR.action.open();
     },
   });
@@ -112,7 +113,7 @@ async function setupContextMenus() {
     ],
     onClick: async (context) => {
       const item = context.items?.[0];
-      requestOpen("library", item?.id);
+      requestOpen("view-library", item?.id);
       await OBR.action.open();
     },
   });
@@ -138,6 +139,38 @@ async function setupContextMenus() {
       const item = context.items?.[0];
       if (!item?.id) return;
       await restoreItems([item.id]);
+    },
+  });
+
+  // 4) Summon Familiar (map context)
+  OBR.contextMenu.create({
+    id: `${ID}/ctx-summon-familiar`,
+    icons: [
+      {
+        icon: iconUrl,
+        label: "Summon Familiar…",
+        filter: {
+          min: 0,
+          max: 0,
+        },
+      },
+    ],
+    onClick: async (context) => {
+      const pos =
+        context?.position ||
+        context?.worldPosition ||
+        context?.cursorPosition ||
+        context?.pointerPosition ||
+        null;
+
+      if (pos && typeof pos.x === "number" && typeof pos.y === "number") {
+        try {
+          localStorage.setItem(REQUEST_SUMMON_POSITION_KEY, JSON.stringify(pos));
+        } catch (_) {}
+      }
+
+      requestOpen("view-summons");
+      await OBR.action.open();
     },
   });
 }
