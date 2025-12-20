@@ -1,4 +1,4 @@
-import OBR, { isImage } from "@owlbear-rodeo/sdk";
+import OBR, { buildImage, isImage } from "@owlbear-rodeo/sdk";
 import "./style.css";
 
 const ID = "com.tutorial.wildshape";
@@ -145,6 +145,7 @@ function normalizeLibrary(raw) {
       id: s.id,
       name: String(s.name || "").trim(),
       size: Number(s.size || 1) || 1,
+      summonable: s.summonable !== false,
       url: s.url,
       imgWidth: isPositiveNumber(Number(s.imgWidth)) ? Number(s.imgWidth) : undefined,
       imgHeight: isPositiveNumber(Number(s.imgHeight)) ? Number(s.imgHeight) : undefined,
@@ -460,6 +461,7 @@ function renderAvailableSummonsList() {
     return;
   }
   availableShapes.forEach(s => {
+    if (s.summonable === false) return;
     const div = document.createElement("div");
     div.className = "shape-card interactive";
     div.innerHTML = `
@@ -751,24 +753,50 @@ async function summonCreature(shape, options) {
     finalName = `${options.summoner.text.plainText}'s Summon`;
   }
 
-  const newItem = {
-    id: uuid(),
-    type: "IMAGE",
-    layer: "CHARACTER",
-    position: position,
-    rotation: 0,
-    scale: { x: 1, y: 1 },
-    image: { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" },
-    grid: { dpi: dims.width / cells, offset: { x: dims.width / 2, y: dims.height / 2 } },
-    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity: 1, strokeOpacity: 1, textAlign: "CENTER" }, richText: [] },
-    metadata: {
-      [METADATA_SUMMON]: {
-        v: 1, createdBy: SUMMON_CREATED_BY, summonId: uuid(), libraryId: shape.id,
-        summonerName: options.summoner?.text?.plainText || "", createdAt: Date.now(),
+  const itemScale = { x: sizePx / dims.width, y: sizePx / dims.height };
+
+  const imageContent = { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" };
+  const grid = { dpi: dpi, offset: { x: dims.width / 2, y: dims.height / 2 } };
+
+  const newItem = buildImage(imageContent, grid)
+    .id(uuid())
+    .name(finalName)
+    .layer("CHARACTER")
+    .position(position)
+    .rotation(0)
+    .scale(itemScale)
+    .text({
+      plainText: finalName,
+      richText: [],
+      type: "PLAIN",
+      width: "AUTO",
+      height: "AUTO",
+      style: {
+        padding: 10,
+        fillColor: "white",
+        strokeColor: "black",
+        strokeWidth: 2,
+        fillOpacity: 1,
+        strokeOpacity: 1,
+        textAlign: "CENTER",
+        textAlignVertical: "MIDDLE",
+        fontFamily: "Roboto",
+        fontWeight: 700,
+        lineHeight: 1.2,
       },
-    },
-    createdUserId: OBR.player.id,
-  };
+    })
+    .textItemType("LABEL")
+    .metadata({
+      [METADATA_SUMMON]: {
+        v: 1,
+        createdBy: SUMMON_CREATED_BY,
+        summonId: uuid(),
+        libraryId: shape.id,
+        summonerName: options.summoner?.text?.plainText || "",
+        createdAt: Date.now(),
+      },
+    })
+    .build();
 
   await OBR.scene.items.addItems([newItem]);
   setTimeout(() => { OBR.player.select([newItem.id]); }, 100);
@@ -933,7 +961,8 @@ async function onAddButtonClick() {
 
 async function saveShapeToLibrarySingle() {
   const name = $("#input-name")?.value?.trim();
-  const size = $("#input-size")?.value;
+  const size = readSelectedSize();
+  const summonable = $("#input-summonable")?.checked ?? true;
   if (!name) { OBR.notification.show("Name required.", "ERROR"); return; }
   if (!currentSelectedImage) { OBR.notification.show("No selection.", "ERROR"); return; }
 
@@ -945,6 +974,7 @@ async function saveShapeToLibrarySingle() {
     id: Date.now().toString(),
     name,
     size: size || 1,
+    summonable,
     url: currentSelectedImage,
     imgWidth: item?.image?.width,
     imgHeight: item?.image?.height,
@@ -1034,9 +1064,27 @@ function syncBatchButtons() {
   if (addBtn) addBtn.disabled = !canSave;
 }
 
+function sizeValueToMultiplier(value) {
+  switch ((value || "").toString()) {
+    case "tiny": return 0.5;
+    case "small": return 0.75;
+    case "medium": return 1;
+    case "large": return 2;
+    case "huge": return 3;
+    case "gargantuan": return 4;
+    default: return Number(value) || 1;
+  }
+}
+
+function readSelectedSize() {
+  const sizeValue = $("#input-size")?.value;
+  return sizeValueToMultiplier(sizeValue);
+}
+
 async function saveBatchCurrentAndNext() {
   const name = $("#input-name")?.value?.trim();
-  const size = $("#input-size")?.value;
+  const size = readSelectedSize();
+  const summonable = $("#input-summonable")?.checked ?? true;
   if (!name) return;
 
   setPreviewLoading(true);
@@ -1049,6 +1097,7 @@ async function saveBatchCurrentAndNext() {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     name,
     size: size || 1,
+    summonable,
     url: item.image.url,
     imgWidth: item.image.width,
     imgHeight: item.image.height,
