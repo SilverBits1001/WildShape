@@ -968,6 +968,7 @@ function startBatch(selectionIds) {
   batch.saved = 0;
   batch.skipped = 0;
   batch.complete = null;
+  setLibraryFormEnabled(true);
   showBatchCompleteUI(false);
   showBatchUI(true);
   void loadBatchCurrentItem();
