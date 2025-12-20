@@ -716,7 +716,8 @@ async function summonCreature(shape, options) {
   } else if (options.type === "adjacent" && options.summoner) {
     const sPos = options.summoner.position;
     const cell = cellSizeFromItem(options.summoner);
-    const offsets = [{ x: cell, y: 0 }, { x: -cell, y: 0 }, { x: 0, y: cell }, { x: 0, y: -cell }];
+    // Prioritize: Left (-X), Right (+X), Behind (-Y/Up)
+    const offsets = [{ x: -cell, y: 0 }, { x: cell, y: 0 }, { x: 0, y: -cell }];
     const existing = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER");
     const candidateSize = { w: sizePx, h: sizePx };
     let found = false;
@@ -727,28 +728,17 @@ async function summonCreature(shape, options) {
       }
     }
     if (!found) {
-      if (isAreaFree(sPos, candidateSize, existing)) position = { ...sPos };
+      // Fallback: Try Front (Down/+Y)
+      const front = { x: sPos.x, y: sPos.y + cell };
+      if (isAreaFree(front, candidateSize, existing)) position = front;
       else { OBR.notification.show("No space adjacent.", "WARNING"); return; }
     }
   }
 
-  const baseName = shape.name || "Summon";
-  const allItems = await OBR.scene.items.getItems();
-  const regex = new RegExp(`^${baseName}( \d+)?$`, "i");
-  let maxNum = 0;
-  let hasBase = false;
-  allItems.forEach((i) => {
-    const txt = i.text?.plainText;
-    if (txt && regex.test(txt)) {
-      if (txt.toLowerCase() === baseName.toLowerCase()) hasBase = true;
-      else {
-        const match = txt.match(/(\d+)$/);
-        if (match) { const n = parseInt(match[1]); if (n > maxNum) maxNum = n; }
-      }
-    }
-  });
-  let finalName = baseName;
-  if (hasBase || maxNum > 0) finalName = `${baseName} ${maxNum + 1}`;
+  let finalName = shape.name || "Summon";
+  if (options.summoner && options.summoner.text?.plainText) {
+    finalName = `${options.summoner.text.plainText}'s Summon`;
+  }
 
   const newItem = {
     id: uuid(),
@@ -864,7 +854,7 @@ async function applyShape(shape) {
         if (item.text) {
           let nextName = baseName;
           if (addPrefix) {
-            if (!nextName.startsWith("🐾 ")) nextName = `🐾 ${nextName}`;
+            nextName = "🐾";
           }
           item.text.plainText = nextName;
         }
