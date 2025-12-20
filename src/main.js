@@ -694,6 +694,273 @@ function setLibraryFormEnabled(enabled) {
   if (previewArea && !enabled) previewArea.style.display = "none";
 }
 
+async function summonCreature(shape, options) {
+  const dims = await ensureShapeDims(shape);
+  if (!dims?.width) { OBR.notification.show("Failed to load image.", "ERROR"); return; }
+
+  let position = { x: 0, y: 0 };
+  let dpi = 150;
+  try { dpi = await OBR.scene.grid.getDpi(); } catch {}
+
+  // Determine target pixel size based on shape setting or default (medium)
+  // Summons don't have "keep current footprint" so we assume medium/1x1 default if not set.
+  // But actually, library shapes have a .size property (multiplier).
+  const mult = Number(shape.size) || 1;
+  // Medium = 1 cell. mult=2 => Large.
+  // We can just use mult as cells directly.
+  const cells = mult;
+  const sizePx = cells * dpi;
+
+  if (options.type === "at" && options.position) {
+    position = options.position;
+  } else if (options.type === "adjacent" && options.summoner) {
+    const sPos = options.summoner.position;
+    const cell = cellSizeFromItem(options.summoner);
+    const offsets = [{ x: cell, y: 0 }, { x: -cell, y: 0 }, { x: 0, y: cell }, { x: 0, y: -cell }];
+    const existing = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER");
+    const candidateSize = { w: sizePx, h: sizePx };
+    let found = false;
+    for (const off of offsets) {
+      const candidate = { x: sPos.x + off.x, y: sPos.y + off.y };
+      if (isAreaFree(candidate, candidateSize, existing)) {
+        position = candidate; found = true; break;
+      }
+    }
+    if (!found) {
+      if (isAreaFree(sPos, candidateSize, existing)) position = { ...sPos };
+      else { OBR.notification.show("No space adjacent.", "WARNING"); return; }
+    }
+  }
+
+  const baseName = shape.name || "Summon";
+  const allItems = await OBR.scene.items.getItems();
+  const regex = new RegExp(`^${baseName}( \d+)?$`, "i");
+  let maxNum = 0;
+  let hasBase = false;
+  allItems.forEach((i) => {
+    const txt = i.text?.plainText;
+    if (txt && regex.test(txt)) {
+      if (txt.toLowerCase() === baseName.toLowerCase()) hasBase = true;
+      else {
+        const match = txt.match(/(\d+)$/);
+        if (match) { const n = parseInt(match[1]); if (n > maxNum) maxNum = n; }
+      }
+    }
+  });
+  let finalName = baseName;
+  if (hasBase || maxNum > 0) finalName = `${baseName} ${maxNum + 1}`;
+
+  const newItem = {
+    id: uuid(),
+    type: "IMAGE",
+    layer: "CHARACTER",
+    position: position,
+    rotation: 0,
+    scale: { x: 1, y: 1 },
+    image: { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" },
+    grid: { dpi: dims.width / cells, offset: { x: dims.width / 2, y: dims.height / 2 } },
+    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity: 1, strokeOpacity: 1 }, richText: [] },
+    metadata: {
+      [METADATA_SUMMON]: {
+        v: 1, createdBy: SUMMON_CREATED_BY, summonId: uuid(), libraryId: shape.id,
+        summonerName: options.summoner?.text?.plainText || "", createdAt: Date.now(),
+      },
+    },
+    createdUserId: OBR.player.id,
+  };
+
+  await OBR.scene.items.addItems([newItem]);
+  setTimeout(() => { OBR.player.select([newItem.id]); }, 100);
+}
+
+// ------------------------------
+// CORE FUNCTIONS
+// ------------------------------
+async function applyShape(shape) {
+  try {
+    const ids = await OBR.player.getSelection();
+    if (!ids || ids.length === 0) {
+      OBR.notification.show("Select a token to transform first.", "WARNING");
+      return;
+    }
+
+    const targetDims = await ensureShapeDims(shape);
+    if (!targetDims || !targetDims.width || !targetDims.height) {
+      OBR.notification.show("Could not read target image dimensions.", "ERROR");
+      return;
+    }
+
+    const keepFootprint = getArtOnly();
+    const addPrefix = getLabelPrefix();
+    const sizeMode = getSizeMode();
+
+    // If Keep Footprint is checked, ignore sizeMode.
+    const forcedCells = keepFootprint ? null : sizeModeToCells(sizeMode);
+
+    let playerName = "";
+    try { playerName = await OBR.player.getName(); } catch (_) {}
+
+    await updateItemsByIds(ids, (items) => {
+      for (const item of items) {
+        if (!isImage(item) || !item.image || !item.grid) continue;
+        item.metadata = item.metadata ?? {};
+
+        // Save Original
+        if (!item.metadata[METADATA_ORIGINAL]) {
+          item.metadata[METADATA_ORIGINAL] = {
+            url: item.image.url,
+            imgWidth: item.image.width,
+            imgHeight: item.image.height,
+            gridDpi: item.grid.dpi,
+            gridOffset: item.grid.offset,
+            scale: safeCloneScale(item.scale),
+            rotation: item.rotation,
+            name: item.text?.plainText || "",
+          };
+        }
+
+        // Save State
+        item.metadata[METADATA_STATE] = {
+          shapeId: shape.id,
+          shapeName: shape.name,
+          transformedAt: Date.now(),
+          mode: forcedCells == null ? "keepFootprint" : "forcedSize",
+        };
+
+        const original = item.metadata[METADATA_ORIGINAL];
+        const preImgW = Number(item.image.width || 1);
+        const preGridDpi = Number(item.grid.dpi || 1);
+        const preScale = safeCloneScale(item.scale);
+        const currentCellsX = (preImgW / preGridDpi) * (preScale.x || 1);
+        const desiredCells = forcedCells ?? currentCellsX;
+
+        // Apply Image & Size
+        item.image.url = shape.url;
+        item.image.width = targetDims.width;
+        item.image.height = targetDims.height;
+
+        if (forcedCells != null) {
+          // Force specific size (e.g. Large = 2 cells)
+          // Scale to 1, set dpi so intrinsic width = 2 cells
+          item.scale = { x: 1, y: 1 };
+          item.grid.dpi = targetDims.width / desiredCells;
+        } else {
+          // Keep current footprint
+          item.scale = { ...preScale };
+          item.grid.dpi = targetDims.width / (desiredCells / (preScale.x || 1));
+        }
+
+        item.grid.offset = { x: targetDims.width / 2, y: targetDims.height / 2 };
+        if (item.image.offset) delete item.image.offset;
+
+        if (typeof original?.rotation === "number") item.rotation = original.rotation;
+
+        // Update Label
+        const baseName =
+          (typeof original?.name === "string" && original.name.trim())
+            ? original.name.trim()
+            : (playerName || item.text?.plainText || "").trim();
+
+        if (item.text) {
+          let nextName = baseName;
+          if (addPrefix) {
+            if (!nextName.startsWith("🐾 ")) nextName = `🐾 ${nextName}`;
+          }
+          item.text.plainText = nextName;
+        }
+      }
+    });
+
+    OBR.notification.show(`Transformed into ${shape.name}`);
+  } catch (error) {
+    console.error(error);
+    OBR.notification.show("Error applying shape.", "ERROR");
+  }
+}
+
+async function handleRevert(context) {
+  await restoreItems(context.items.map((i) => i.id));
+}
+
+async function revertSelection() {
+  const ids = await OBR.player.getSelection();
+  if (ids && ids.length > 0) await restoreItems(ids);
+}
+
+async function restoreItems(ids) {
+  try {
+    await updateItemsByIds(ids, (items) => {
+      for (const item of items) {
+        if (!isImage(item) || !item.image || !item.grid || !item.metadata) continue;
+        const original = item.metadata[METADATA_ORIGINAL];
+        if (!validateOriginal(original)) continue;
+
+        if (original.url) item.image.url = original.url;
+        if (typeof original.imgWidth === "number") item.image.width = original.imgWidth;
+        if (typeof original.imgHeight === "number") item.image.height = original.imgHeight;
+        if (typeof original.gridDpi === "number") item.grid.dpi = original.gridDpi;
+        if (original.scale) item.scale = { ...original.scale };
+        if (typeof original.rotation === "number") item.rotation = original.rotation;
+
+        if (item.text && typeof original.name === "string") {
+          item.text.plainText = original.name;
+        }
+
+        const w = Number(original.imgWidth || item.image.width || 0);
+        const h = Number(original.imgHeight || item.image.height || 0);
+        if (original.gridOffset && !Array.isArray(original.gridOffset)) {
+          item.grid.offset = original.gridOffset;
+        } else if (w && h) {
+          item.grid.offset = { x: w / 2, y: h / 2 };
+        }
+
+        delete item.metadata[METADATA_ORIGINAL];
+        delete item.metadata[METADATA_STATE];
+      }
+    });
+    OBR.notification.show("Reverted to original form");
+  } catch (error) {
+    console.error(error);
+    OBR.notification.show("Error reverting form.", "ERROR");
+  }
+}
+
+async function onAddButtonClick() {
+  if (batch.active) await saveBatchCurrentAndNext();
+  else await saveShapeToLibrarySingle();
+}
+
+async function saveShapeToLibrarySingle() {
+  const name = $("#input-name")?.value?.trim();
+  const size = $("#input-size")?.value;
+  if (!name) { OBR.notification.show("Name required.", "ERROR"); return; }
+  if (!currentSelectedImage) { OBR.notification.show("No selection.", "ERROR"); return; }
+
+  const selection = await OBR.player.getSelection();
+  const items = await OBR.scene.items.getItems(selection);
+  const item = items?.[0];
+
+  const newShape = {
+    id: Date.now().toString(),
+    name,
+    size: size || 1,
+    url: currentSelectedImage,
+    imgWidth: item?.image?.width,
+    imgHeight: item?.image?.height,
+  };
+
+  const newLibrary = [...availableShapes, newShape];
+  await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
+
+  if ($("#input-name")) $("#input-name").value = "";
+  OBR.notification.show(`Added ${name} to library`);
+}
+
+async function deleteShape(shapeId) {
+  const newLibrary = availableShapes.filter((s) => s.id !== shapeId);
+  await OBR.room.setMetadata({ [METADATA_LIBRARY]: newLibrary });
+}
+
 function startBatch(selectionIds) {
   batch.active = true;
   batch.ids = [...selectionIds];
