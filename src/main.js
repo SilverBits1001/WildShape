@@ -715,9 +715,19 @@ async function summonCreature(shape, options) {
     position = options.position;
   } else if (options.type === "adjacent" && options.summoner) {
     const sPos = options.summoner.position;
-    const cell = cellSizeFromItem(options.summoner);
-    // Prioritize: Left (-X), Right (+X), Behind (-Y/Up)
-    const offsets = [{ x: -cell, y: 0 }, { x: cell, y: 0 }, { x: 0, y: -cell }];
+    const summonerBounds = getItemBounds(options.summoner);
+    const sHalfW = summonerBounds.w / 2;
+    const sHalfH = summonerBounds.h / 2;
+    const nHalfW = sizePx / 2;
+    const nHalfH = sizePx / 2;
+    
+    // Left (-X), Right (+X), Behind (-Y/Up)
+    const offsets = [
+      { x: -(sHalfW + nHalfW), y: 0 },
+      { x: (sHalfW + nHalfW), y: 0 },
+      { x: 0, y: -(sHalfH + nHalfH) }
+    ];
+    
     const existing = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER");
     const candidateSize = { w: sizePx, h: sizePx };
     let found = false;
@@ -729,7 +739,8 @@ async function summonCreature(shape, options) {
     }
     if (!found) {
       // Fallback: Try Front (Down/+Y)
-      const front = { x: sPos.x, y: sPos.y + cell };
+      const frontOffset = sHalfH + nHalfH;
+      const front = { x: sPos.x, y: sPos.y + frontOffset };
       if (isAreaFree(front, candidateSize, existing)) position = front;
       else { OBR.notification.show("No space adjacent.", "WARNING"); return; }
     }
@@ -1205,13 +1216,14 @@ function getItemBounds(item) {
 function isAreaFree(candidatePos, candidateSize, existingItems) {
   const halfW = (candidateSize?.w || 0) / 2;
   const halfH = (candidateSize?.h || 0) / 2;
+  const epsilon = 1.0; 
   for (const item of existingItems) {
     if (!item?.position || !item.image) continue;
     const { w, h } = getItemBounds(item);
     if (!w || !h) continue;
     const dx = Math.abs(item.position.x - candidatePos.x);
     const dy = Math.abs(item.position.y - candidatePos.y);
-    if (dx < halfW + w / 2 && dy < halfH + h / 2) return false;
+    if (dx < (halfW + w / 2 - epsilon) && dy < (halfH + h / 2 - epsilon)) return false;
   }
   return true;
 }
