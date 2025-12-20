@@ -760,7 +760,7 @@ async function summonCreature(shape, options) {
     scale: { x: 1, y: 1 },
     image: { url: shape.url, width: dims.width, height: dims.height, mime: "image/png" },
     grid: { dpi: dims.width / cells, offset: { x: dims.width / 2, y: dims.height / 2 } },
-    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity: 1, strokeOpacity: 1 }, richText: [] },
+    text: { plainText: finalName, style: { padding: 10, fontSize: 24, fillColor: "white", strokeColor: "black", strokeWidth: 2, fillOpacity: 1, strokeOpacity: 1, textAlign: "CENTER" }, richText: [] },
     metadata: {
       [METADATA_SUMMON]: {
         v: 1, createdBy: SUMMON_CREATED_BY, summonId: uuid(), libraryId: shape.id,
