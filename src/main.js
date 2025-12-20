@@ -55,6 +55,8 @@ let activeSummons = [];
 let activeTransformed = [];
 let currentSelectionIds = [];
 let pendingSummonPosition = null;
+let tabsInitialized = false;
+let appReady = false;
 
 // Cache image dimensions by URL
 const imageDimCache = new Map();
@@ -972,10 +974,12 @@ async function handleContextMenuSummon(context) {
 }
 
 function setupTabs() {
+  if (tabsInitialized) return;
   const tabs = document.querySelectorAll(".tab");
   tabs.forEach(t => {
     t.addEventListener("click", () => activateTab(t.dataset.target));
   });
+  tabsInitialized = true;
 }
 
 function activateTab(targetId) {
@@ -993,6 +997,8 @@ function activateTab(targetId) {
 
   localStorage.setItem(ACTIVE_TAB_KEY, targetId);
 
+  if (!appReady) return;
+
   if (targetId === "view-transform") {
     ensureActiveTransformedUI(); ensureTransformSizingUI(); renderActiveTransformedList(); void refreshActiveNow();
   }
@@ -1002,6 +1008,16 @@ function activateTab(targetId) {
   if (targetId === "view-library") {
     ensureBatchUI(); normalizeLibraryHelperText(); void OBR.player.getSelection().then(updateSelectionUI);
   }
+}
+
+function resolveRequestedTab() {
+  const requested = localStorage.getItem(OPEN_TAB_KEY) || localStorage.getItem(REQUEST_TAB_KEY);
+  if (requested) {
+    localStorage.removeItem(OPEN_TAB_KEY);
+    localStorage.removeItem(REQUEST_TAB_KEY);
+    return requested;
+  }
+  return localStorage.getItem(ACTIVE_TAB_KEY);
 }
 
 OBR.onReady(async () => {
@@ -1066,11 +1082,21 @@ OBR.onReady(async () => {
     else ignoreNextSelectionChange = false;
   });
 
-  const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
-  if (savedTab) activateTab(savedTab);
-  else activateTab("view-transform");
+  appReady = true;
+
+  setupTabs();
+
+  const initialTab = resolveRequestedTab() || "view-transform";
+  activateTab(initialTab);
 
   const s = await OBR.player.getSelection();
   updateSelectionUI(s);
   await refreshActiveNow();
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (!$("#app")) return;
+  setupTabs();
+  const savedTab = localStorage.getItem(ACTIVE_TAB_KEY) || "view-transform";
+  activateTab(savedTab);
 });
