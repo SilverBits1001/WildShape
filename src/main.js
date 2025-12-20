@@ -1291,23 +1291,7 @@ function resolveRequestedTab() {
 OBR.onReady(async () => {
   console.log("[WildShape] Ready");
 
-  OBR.contextMenu.create({
-    id: `${ID}/open-menu`,
-    icons: [{ icon: "/icon.svg", label: "Wild Shape", filter: { every: [{ key: "layer", value: "CHARACTER" }] } }],
-    onClick: async () => await OBR.action.open(),
-  });
 
-  OBR.contextMenu.create({
-    id: `${ID}/summon-familiar`,
-    icons: [{ icon: "/icon.svg", label: "Summon Familiar", filter: { every: [{ key: "layer", value: "CHARACTER" }] } }],
-    onClick: handleContextMenuSummon,
-  });
-
-  OBR.contextMenu.create({
-    id: `${ID}/revert`,
-    icons: [{ icon: "/revert.svg", label: "Revert Form", filter: { every: [{ key: "layer", value: "CHARACTER" }, { key: ["metadata", METADATA_ORIGINAL], operator: "!=", value: undefined }] } }],
-    onClick: handleRevert,
-  });
 
   if (!$("#app")) return;
 
